@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Onland Data Entry</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style/style.css">
 </head>
 <body>
     <!-- Main Content -->
@@ -93,10 +93,10 @@
 
     <script type="module">
         // Import modules
-        import { initLogger, addLog } from './logger.js';
-        import { initWebview, getWebview } from './webview-manager.js';
-        import { initUI, showStatus } from './ui.js';
-        import { setupSearchHandler } from './search-handler.js';
+        import { initLogger, addLog } from './scripts/logger.js';
+        import { initWebview, getWebview } from './scripts/webview-manager.js';
+        import { initUI, showStatus } from './scripts/ui.js';
+        import { setupSearchHandler } from './scripts/search-handler.js';
 
         // Get DOM elements
         const webview = document.getElementById('onlandWebview');
