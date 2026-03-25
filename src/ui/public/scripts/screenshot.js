@@ -1,13 +1,13 @@
 /**
- * Screenshot Module - Handles screenshot capture
+ * Screenshot Module - Handles page data capture
  */
 
 import { addLog } from './logger.js';
 
 /**
- * Capture a screenshot of the current webview content
+ * Capture page data (text-based snapshot)
  * @param {HTMLElement} webview - The webview element
- * @returns {Promise} Promise that resolves with screenshot data
+ * @returns {Promise} Promise that resolves with page data
  */
 export function captureScreenshot(webview) {
     return webview.executeJavaScript(`
@@ -24,19 +24,6 @@ export function captureScreenshot(webview) {
                         textContent: document.body.innerText.substring(0, 5000)
                     }
                 };
-
-                // Try to extract page counts using getElementsByClassName
-                const pageCountDivs = document.getElementsByClassName('page-count');
-                if (pageCountDivs.length > 0) {
-                    const pElement = pageCountDivs[0].querySelector('p');
-                    if (pElement) {
-                        const text = pElement.textContent || pElement.innerText;
-                        const match = text.match(/of\\s+(\\d+)/);
-                        if (match) {
-                            pageInfo.totalPages = parseInt(match[1], 10);
-                        }
-                    }
-                }
 
                 return JSON.stringify(pageInfo);
             } catch (err) {
