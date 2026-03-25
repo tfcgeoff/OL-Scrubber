@@ -687,21 +687,61 @@
                                     `).then(viewResult => {
                                         addLog('info', 'View Details click result', viewResult.log);
 
-                                        // Poll for page-count element before taking screenshot
+                                        // === Save full page HTML to temp file ===
+                                        setTimeout(() => {
+                                            webview.executeJavaScript(`
+                                                (() => {
+                                                    return document.documentElement.outerHTML;
+                                                })()
+                                            `).then(fullHtml => {
+                                                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                                                const filename = `book-page-${timestamp}.html`;
+
+                                                window.electronAPI.saveTempFile({
+                                                    filename: filename,
+                                                    content: fullHtml
+                                                }).then(saveResult => {
+                                                    if (saveResult.success) {
+                                                        addLog('success', 'Full page HTML saved', {
+                                                            filepath: saveResult.filepath,
+                                                            size: fullHtml.length
+                                                        });
+                                                    }
+                                                });
+                                            }).catch(err => {
+                                                addLog('error', 'Failed to save HTML: ' + err.message);
+                                            });
+                                        }, 2000);
+
+                                        // Poll for page-count element
                                         const pollForPageCount = (pollCount = 0) => {
-                                            const maxPolls = 20;
+                                            const maxPolls = 30; // 15 seconds total
 
                                             webview.executeJavaScript(`
                                                 (() => {
-                                                    const pageElement = document.querySelector('.page-count p');
+                                                    // Try 1: Use selector
+                                                    let pageElement = document.querySelector('.page-count p');
+
+                                                    // Try 2: Search for element containing "of X" pattern
                                                     if (!pageElement) {
-                                                        return { found: false };
+                                                        const allP = document.querySelectorAll('p');
+                                                        for (let i = 0; i < allP.length; i++) {
+                                                            const text = allP[i].textContent || allP[i].innerText || '';
+                                                            if (/^of\\s+\\d+$/.test(text.trim())) {
+                                                                pageElement = allP[i];
+                                                                break;
+                                                            }
+                                                        }
+                                                    }
+
+                                                    if (!pageElement) {
+                                                        return { found: false, method: 'none' };
                                                     }
 
                                                     const text = pageElement.textContent || pageElement.innerText;
                                                     const match = text.match(/of\s+(\d+)/);
                                                     if (!match) {
-                                                        return { found: false };
+                                                        return { found: false, method: 'element-but-no-match', text: text };
                                                     }
 
                                                     const totalPages = parseInt(match[1], 10);
@@ -794,8 +834,8 @@
                                             });
                                         };
 
-                                        // Start polling after a short delay
-                                        setTimeout(() => pollForPageCount(0), 500);
+                                        // Start polling AFTER book loads (2.5 seconds)
+                                        setTimeout(() => pollForPageCount(0), 2500);
 
                                         // Screenshot capture function - text-based fallback
                                         const takeScreenshot = () => {
