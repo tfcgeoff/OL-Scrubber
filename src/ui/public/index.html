@@ -4,288 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Onland Data Entry</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #1a1a2e;
-            color: #eee;
-            min-height: 100vh;
-            display: flex;
-        }
-
-        /* Main layout */
-        .main-content {
-            flex: 1;
-            padding: 20px;
-            overflow-y: auto;
-            max-width: 50%;
-        }
-
-        .sidebar {
-            width: 50%;
-            background: #0f0f1a;
-            border-left: 1px solid #0f3460;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            position: fixed;
-            right: 0;
-            top: 0;
-        }
-
-        .sidebar-header {
-            padding: 15px;
-            background: #16213e;
-            border-bottom: 1px solid #0f3460;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .sidebar-header h2 {
-            font-size: 14px;
-            color: #4ecca3;
-            margin: 0;
-        }
-
-        .clear-logs-btn {
-            background: #e94560;
-            color: white;
-            border: none;
-            padding: 5px 10px;
-            border-radius: 4px;
-            font-size: 12px;
-            cursor: pointer;
-        }
-
-        .logs-container {
-            flex: 1;
-            overflow-y: auto;
-            padding: 10px;
-        }
-
-        .log-entry {
-            font-family: 'Monaco', 'Menlo', monospace;
-            font-size: 11px;
-            padding: 6px 8px;
-            margin-bottom: 8px;
-            border-radius: 4px;
-            border-left: 3px solid #0f3460;
-            background: #16213e;
-            word-break: break-word;
-        }
-
-        .log-screenshot {
-            margin-top: 8px;
-            border-radius: 4px;
-            overflow: hidden;
-            border: 1px solid #0f3460;
-        }
-
-        .log-screenshot img {
-            width: 100%;
-            display: block;
-            cursor: pointer;
-        }
-
-        .log-entry.info {
-            border-left-color: #4ecca3;
-        }
-
-        .log-entry.success {
-            border-left-color: #2ecc71;
-            background: #1b4332;
-        }
-
-        .log-entry.warning {
-            border-left-color: #f39c12;
-        }
-
-        .log-entry.error {
-            border-left-color: #e94560;
-            background: #2d1f2d;
-        }
-
-        .log-timestamp {
-            color: #666;
-            font-size: 10px;
-        }
-
-        .log-message {
-            color: #eee;
-        }
-
-        .log-data {
-            color: #aaa;
-            font-size: 10px;
-            margin-top: 4px;
-        }
-
-        .log-page-snapshot {
-            margin-top: 8px;
-            padding: 8px;
-            background: #0f0f1a;
-            border: 1px solid #0f3460;
-            border-radius: 4px;
-            font-family: 'Monaco', 'Menlo', monospace;
-            font-size: 10px;
-            max-height: 300px;
-            overflow-y: auto;
-        }
-
-        .log-page-snapshot pre {
-            margin: 0;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            color: #888;
-        }
-
-        h1 {
-            text-align: center;
-            margin-bottom: 20px;
-            color: #4ecca3;
-        }
-
-        .card {
-            background: #16213e;
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        }
-
-        .card h2 {
-            margin-bottom: 15px;
-            color: #4ecca3;
-        }
-
-        .form-row {
-            display: flex;
-            gap: 15px;
-            margin-bottom: 15px;
-        }
-
-        .form-group {
-            flex: 1;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 500;
-        }
-
-        input[type="text"],
-        select {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #0f3460;
-            border-radius: 6px;
-            background: #1a1a2e;
-            color: #eee;
-            font-size: 14px;
-        }
-
-        input:focus,
-        select:focus {
-            outline: 2px solid #4ecca3;
-            outline-offset: -2px;
-        }
-
-        button {
-            background: #4ecca3;
-            color: #1a1a2e;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s;
-        }
-
-        button:hover:not(:disabled) {
-            transform: scale(1.02);
-        }
-
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        button.secondary {
-            background: #e94560;
-        }
-
-        .screenshot-container {
-            text-align: center;
-            margin: 20px 0;
-        }
-
-        #screenshot {
-            max-width: 100%;
-            max-height: 500px;
-            border: 2px solid #0f3460;
-            border-radius: 8px;
-        }
-
-        .status {
-            padding: 10px 15px;
-            background: #0f3460;
-            border-radius: 6px;
-            margin-bottom: 10px;
-            font-size: 14px;
-        }
-
-        .status.success {
-            background: #1b4332;
-            border-left: 4px solid #4ecca3;
-        }
-
-        .status.error {
-            background: #1a1a2e;
-            border-left: 4px solid #e94560;
-        }
-
-        .page-info {
-            text-align: center;
-            margin: 10px 0;
-            font-size: 18px;
-            color: #4ecca3;
-        }
-
-        .navigation-controls {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 15px;
-            margin: 20px 0;
-        }
-
-        .hidden {
-            display: none;
-        }
-
-        /* Scrollbar styling */
-        .logs-container::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        .logs-container::-webkit-scrollbar-track {
-            background: #0f0f1a;
-        }
-
-        .logs-container::-webkit-scrollbar-thumb {
-            background: #0f3460;
-            border-radius: 4px;
-        }
-    </style>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <!-- Main Content -->
@@ -687,61 +406,32 @@
                                     `).then(viewResult => {
                                         addLog('info', 'View Details click result', viewResult.log);
 
-                                        // === Save full page HTML to temp file ===
-                                        setTimeout(() => {
-                                            webview.executeJavaScript(`
-                                                (() => {
-                                                    return document.documentElement.outerHTML;
-                                                })()
-                                            `).then(fullHtml => {
-                                                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                                                const filename = `book-page-${timestamp}.html`;
-
-                                                window.electronAPI.saveTempFile({
-                                                    filename: filename,
-                                                    content: fullHtml
-                                                }).then(saveResult => {
-                                                    if (saveResult.success) {
-                                                        addLog('success', 'Full page HTML saved', {
-                                                            filepath: saveResult.filepath,
-                                                            size: fullHtml.length
-                                                        });
-                                                    }
-                                                });
-                                            }).catch(err => {
-                                                addLog('error', 'Failed to save HTML: ' + err.message);
-                                            });
-                                        }, 2000);
-
                                         // Poll for page-count element
                                         const pollForPageCount = (pollCount = 0) => {
                                             const maxPolls = 30; // 15 seconds total
 
                                             webview.executeJavaScript(`
                                                 (() => {
-                                                    // Try 1: Use selector
-                                                    let pageElement = document.querySelector('.page-count p');
+                                                    // Get elements by class name "page-count"
+                                                    const pageCountDivs = document.getElementsByClassName('page-count');
 
-                                                    // Try 2: Search for element containing "of X" pattern
-                                                    if (!pageElement) {
-                                                        const allP = document.querySelectorAll('p');
-                                                        for (let i = 0; i < allP.length; i++) {
-                                                            const text = allP[i].textContent || allP[i].innerText || '';
-                                                            if (/^of\\s+\\d+$/.test(text.trim())) {
-                                                                pageElement = allP[i];
-                                                                break;
-                                                            }
-                                                        }
+                                                    if (pageCountDivs.length === 0) {
+                                                        return { found: false, method: 'no-page-count-divs' };
                                                     }
 
-                                                    if (!pageElement) {
-                                                        return { found: false, method: 'none' };
+                                                    // Get the first page-count div and find the <p> inside it
+                                                    const firstDiv = pageCountDivs[0];
+                                                    const pElement = firstDiv.querySelector('p');
+
+                                                    if (!pElement) {
+                                                        return { found: false, method: 'no-p-element' };
                                                     }
 
-                                                    const text = pageElement.textContent || pageElement.innerText;
-                                                    const match = text.match(/of\s+(\d+)/);
+                                                    const text = pElement.textContent || pElement.innerText || '';
+                                                    const match = text.match(/of\\s+(\\d+)/);
+
                                                     if (!match) {
-                                                        return { found: false, method: 'element-but-no-match', text: text };
+                                                        return { found: false, method: 'no-match', text: text };
                                                     }
 
                                                     const totalPages = parseInt(match[1], 10);
@@ -854,16 +544,16 @@
                                                             }
                                                         };
 
-                                                        // Try to extract page counts
-                                                        const pageElement = document.querySelector('.page-count p');
-                                                        if (pageElement) {
-                                                            const text = pageElement.textContent || pageElement.innerText;
-                                                            const match = text.match(/(\d+)\s*of\s*(\d+)/);
-                                                            if (match) {
-                                                                pageInfo.pageCounts = {
-                                                                    currentPage: parseInt(match[1], 10),
-                                                                    totalPages: parseInt(match[2], 10)
-                                                                };
+                                                        // Try to extract page counts using getElementsByClassName
+                                                        const pageCountDivs = document.getElementsByClassName('page-count');
+                                                        if (pageCountDivs.length > 0) {
+                                                            const pElement = pageCountDivs[0].querySelector('p');
+                                                            if (pElement) {
+                                                                const text = pElement.textContent || pElement.innerText;
+                                                                const match = text.match(/of\\s+(\\d+)/);
+                                                                if (match) {
+                                                                    pageInfo.totalPages = parseInt(match[1], 10);
+                                                                }
                                                             }
                                                         }
 
