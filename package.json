@@ -1,0 +1,20 @@
+{
+  "name": "web-data-entry",
+  "version": "0.1.0",
+  "description": "Electron + Playwright automation for land records data entry",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "install-playwright": "playwright install chromium"
+  },
+  "dependencies": {
+    "electron": "^28.0.0",
+    "playwright": "^1.40.0",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {},
+  "keywords": ["electron", "playwright", "automation", "land-records"],
+  "author": "",
+  "license": "MIT"
+}
