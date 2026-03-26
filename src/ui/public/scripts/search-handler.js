@@ -13,15 +13,14 @@ import { captureScreenshot } from './screenshot.js';
  * Capture screenshot and display it in the log
  * @param {HTMLElement} webview - The webview element
  */
-async function takeAndDisplayScreenshot(webview) {
-    try {
-        const base64Data = await captureScreenshot(webview);
-        // Remove the data:image/png;base64, prefix for addLog
-        const base64Only = base64Data.replace(/^data:image\/\w+;base64,/, '');
-        addLog('info', 'Screenshot captured', null, base64Only);
-    } catch (err) {
-        addLog('error', 'Screenshot capture failed: ' + err.message);
-    }
+function takeAndDisplayScreenshot(webview) {
+    captureScreenshot(webview, (base64Data) => {
+        if (base64Data) {
+            addLog('info', 'Screenshot captured', null, base64Data);
+        } else {
+            addLog('error', 'Screenshot capture failed - no data returned');
+        }
+    });
 }
 
 /**
