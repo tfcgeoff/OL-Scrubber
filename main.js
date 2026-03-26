@@ -159,13 +159,45 @@ ipcMain.handle('logs:clear', async () => {
 
 // Handle webview screenshot requests
 ipcMain.handle('webview:screenshot', async (event, webviewId) => {
-    // Find the webview element in the renderer
-    // This requires sending a message back to renderer to get the screenshot
-    // For now, return a simple base64 placeholder
-    return {
-        success: false,
-        message: 'Webview screenshot requires direct access from renderer process'
-    };
+    try {
+        const { webContents } = require('electron');
+
+        // Get the webview's guest WebContents using its ID
+        const guestWebContents = webContents.fromId(webviewId);
+
+        if (!guestWebContents) {
+            return {
+                success: false,
+                message: 'Webview not found or ready'
+            };
+        }
+
+        // Capture the screenshot from the guest WebContents
+        const image = await guestWebContents.capturePage();
+
+        if (!image) {
+            return {
+                success: false,
+                message: 'Screenshot capture returned empty image'
+            };
+        }
+
+        // Convert NativeImage to PNG buffer, then to base64
+        const buffer = image.toPNG();
+        const base64Data = buffer.toString('base64');
+
+        return {
+            success: true,
+            data: base64Data,
+            size: buffer.length
+        };
+
+    } catch (error) {
+        return {
+            success: false,
+            message: error.message
+        };
+    }
 });
 
 

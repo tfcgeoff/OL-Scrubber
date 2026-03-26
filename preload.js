@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // Webview screenshot - capture webview content
     captureWebview: (webviewId) => ipcRenderer.invoke('webview:screenshot', webviewId),
+    captureWebviewScreenshot: (webviewId) => ipcRenderer.invoke('webview:screenshot', webviewId),
 
     // Logs
     getLogs: (since) => ipcRenderer.invoke('logs:get', since),

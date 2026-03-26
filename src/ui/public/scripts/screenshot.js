@@ -12,34 +12,60 @@ import { addLog } from './logger.js';
 export function captureScreenshot(webview, callback) {
     addLog('info', 'Starting screenshot capture...');
 
-    try {
-        addLog('info', 'Calling webview.capturePage()...');
+    // Validate webview element
+    if (!webview) {
+        addLog('error', 'Webview element is null or undefined');
+        callback(null);
+        return;
+    }
 
-        webview.capturePage((image) => {
-            addLog('info', 'capturePage callback received', { hasImage: !!image });
+    // Check if getWebContentsId method exists
+    if (typeof webview.getWebContentsId !== 'function') {
+        addLog('error', 'webview.getWebContentsId is not a function');
+        callback(null);
+        return;
+    }
 
-            if (image) {
-                // Convert NativeImage to PNG buffer
-                const buffer = image.toPNG();
-                // Convert to base64
-                const base64Data = buffer.toString('base64');
+    // Get the webview's ID (this identifies the guest WebContents in the main process)
+    const webviewId = webview.getWebContentsId();
 
-                addLog('success', 'Screenshot captured and converted', {
-                    size: buffer.length,
-                    base64Length: base64Data.length
+    if (!webviewId || webviewId <= 0) {
+        addLog('error', 'Invalid webview ID: ' + webviewId + ' - webview may not be ready');
+        callback(null);
+        return;
+    }
+
+    addLog('info', 'Webview ID: ' + webviewId);
+
+    // Check if the electronAPI is available
+    if (!window.electronAPI || typeof window.electronAPI.captureWebviewScreenshot !== 'function') {
+        addLog('error', 'electronAPI.captureWebviewScreenshot is not available');
+        callback(null);
+        return;
+    }
+
+    // Call the IPC method to capture screenshot from main process
+    addLog('info', 'Calling IPC to capture screenshot...');
+
+    window.electronAPI.captureWebviewScreenshot(webviewId)
+        .then(result => {
+            addLog('info', 'IPC screenshot response received', {
+                success: result.success,
+                hasData: !!result.data
+            });
+
+            if (result.success && result.data) {
+                addLog('success', 'Screenshot captured via IPC', {
+                    size: result.size || 'unknown'
                 });
-
-                // Call the callback with the base64 data (without prefix for addLog)
-                const base64Only = base64Data.replace(/^data:image\/\w+;base64,/, '');
-                callback(base64Only);
+                callback(result.data);
             } else {
-                const err = 'capturePage returned null';
-                addLog('error', 'Screenshot capture failed: ' + err);
+                addLog('error', 'Screenshot capture failed: ' + (result.message || 'Unknown error'));
                 callback(null);
             }
+        })
+        .catch(error => {
+            addLog('error', 'IPC screenshot call failed: ' + error.message);
+            callback(null);
         });
-    } catch (err) {
-        addLog('error', 'Screenshot capture error: ' + err.message);
-        callback(null);
-    }
 }
