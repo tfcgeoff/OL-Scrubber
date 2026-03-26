@@ -90,32 +90,15 @@ function navigateToMiddlePage(webview, pageNumber) {
             const currentUrl = window.location.href;
             const middlePage = ${pageNumber};
 
-            // Parse page number from URL or construct new URL
-            let newUrl;
-            if (currentUrl.includes('/books/search/')) {
-                // URL format: /books/search/{some-path}
-                const parts = currentUrl.split('/books/search/');
-                if (parts.length > 1) {
-                    const searchPath = parts[1].split('?')[0];
-                    const urlObj = new URL(currentUrl);
-                    urlObj.searchParams.set('page', middlePage);
-                    newUrl = urlObj.href;
-                } else {
-                    newUrl = currentUrl + '?page=' + middlePage;
-                }
-            } else {
-                const urlObj = new URL(currentUrl);
-                urlObj.searchParams.set('page', middlePage);
-                newUrl = urlObj.href;
-            }
+            const urlObj = new URL(currentUrl);
+            urlObj.searchParams.set('page', middlePage);
 
-            // Navigate to the middle page
-            window.location.href = newUrl;
+            window.location.href = urlObj.href;
 
             return {
                 navigated: true,
                 middlePage: middlePage,
-                newUrl: newUrl,
+                newUrl: urlObj.href,
                 oldUrl: currentUrl
             };
         })()

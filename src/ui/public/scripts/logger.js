@@ -67,8 +67,14 @@ export function addLog(level, message, data = null, screenshot = null) {
         img.style.marginTop = '8px';
         // Make screenshot clickable to view full size
         img.onclick = () => {
-            const win = window.open();
-            win.document.write('<img src="' + img.src + '" style="width:100%"/>');
+            const win = window.open('', '_blank');
+            if (win) {
+                win.document.title = img.alt;
+                const newImg = win.document.createElement('img');
+                newImg.src = img.src;
+                newImg.style.width = '100%';
+                win.document.body.appendChild(newImg);
+            }
         };
         screenshotDiv.appendChild(img);
         entry.appendChild(screenshotDiv);

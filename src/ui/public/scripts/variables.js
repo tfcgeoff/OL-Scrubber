@@ -19,8 +19,6 @@ export const SEARCH_VIEW_DETAILS_WAIT = 1500;
 
 // Form filler timing
 export const FORM_DROPDOWN_WAIT = 500;
-export const FORM_SEARCH_CLICK_INTERVAL = 1000;
-export const FORM_SEARCH_MAX_CLICKS = 5;
 
 // UI timing
 export const STATUS_MESSAGE_DURATION = 5000;

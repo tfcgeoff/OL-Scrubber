@@ -15,7 +15,7 @@ import {
  * Sequence:
  * 1. Wait for spinner to appear (page change started)
  * 2. Poll every 10ms until spinner is gone (page loaded)
- * 3. Wait 25ms buffer
+ * 3. Wait buffer before resolving
  * 4. Resolve (ready for screenshot)
  * @param {HTMLElement} webview - The webview element
  * @returns {Promise} Promise that resolves when page is ready
@@ -113,8 +113,6 @@ async function waitForCanvasReady(webview) {
 
             // Start polling every 10ms
             intervalId = setInterval(pollForLoad, pollInterval);
-            // Immediate first check
-            pollForLoad();
         };
 
         // Start the process

@@ -2,11 +2,7 @@
  * Form Filler Module - Fills in the search form on the Onland website
  */
 
-import {
-    FORM_DROPDOWN_WAIT,
-    FORM_SEARCH_CLICK_INTERVAL,
-    FORM_SEARCH_MAX_CLICKS
-} from './variables.js';
+import { FORM_DROPDOWN_WAIT } from './variables.js';
 
 /**
  * Generate the JavaScript code to fill the search form
@@ -152,19 +148,8 @@ export function generateFormFillScript(descType, descNumber) {
             const searchBtn = document.getElementById('searchButton');
             if (searchBtn) {
                 log.push({ step: 'found search button', id: 'searchButton' });
-
-                // Click multiple times to ensure submission
-                let clickCount = 0;
-                const maxClicks = ${FORM_SEARCH_MAX_CLICKS};
-                const clickInterval = setInterval(() => {
-                    searchBtn.click();
-                    clickCount++;
-                    log.push({ step: 'clicked search', count: clickCount });
-
-                    if (clickCount >= maxClicks) {
-                        clearInterval(clickInterval);
-                    }
-                }, ${FORM_SEARCH_CLICK_INTERVAL});
+                searchBtn.click();
+                log.push({ step: 'clicked search', success: true });
             } else {
                 log.push({ step: 'error', message: 'searchButton not found by ID' });
             }
