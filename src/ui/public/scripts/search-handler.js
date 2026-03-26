@@ -100,7 +100,7 @@ function waitForFormFill(webview, descType, descNumber) {
                         // Wait for results page and look for "View Details" buttons
                         setTimeout(() => {
                             waitForViewDetails(webview);
-                        }, 5000);
+                        }, 3000);
                     } else {
                         addLog('warning', 'Search may not have completed');
                         showStatus('May not have completed search', 'warning');
@@ -150,12 +150,12 @@ function waitForViewDetails(webview) {
     `).then(viewResult => {
         addLog('info', 'View Details click result', viewResult.log);
 
-        // Start polling for page count after 2.5 seconds
+        // Start polling for page count after book loads
         setTimeout(() => {
             pollForPageCount(webview, () => {
                 takeAndDisplayScreenshot(webview);
             });
-        }, 2500);
+        }, 1500);
     }).catch(err => {
         addLog('error', 'View Details execution failed: ' + err.message);
     });

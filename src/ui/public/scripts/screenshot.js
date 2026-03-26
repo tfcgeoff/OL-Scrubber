@@ -10,16 +10,25 @@ import { addLog } from './logger.js';
  * @returns {Promise<string>} Promise that resolves with base64 PNG data
  */
 export async function captureScreenshot(webview) {
+    addLog('info', 'Starting screenshot capture...');
+
     return new Promise((resolve, reject) => {
         try {
+            addLog('info', 'Calling webview.capturePage()...');
+
             webview.capturePage((image) => {
+                addLog('info', 'capturePage callback received', { hasImage: !!image });
+
                 if (image) {
                     // Convert NativeImage to PNG buffer
                     const buffer = image.toPNG();
                     // Convert to base64
                     const base64Data = buffer.toString('base64');
 
-                    addLog('success', 'Screenshot captured', { size: buffer.length });
+                    addLog('success', 'Screenshot captured and converted', {
+                        size: buffer.length,
+                        base64Length: base64Data.length
+                    });
                     resolve('data:image/png;base64,' + base64Data);
                 } else {
                     const err = 'capturePage returned null';
