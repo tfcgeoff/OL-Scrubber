@@ -2,6 +2,8 @@
  * UI Module - UI helper functions
  */
 
+import { STATUS_MESSAGE_DURATION } from './variables.js';
+
 // Cache DOM elements
 let statusMessage;
 
@@ -19,9 +21,9 @@ export function initUI(statusElem) {
  * @param {string} type - The type of message (success, error, warning)
  */
 export function showStatus(message, type = 'success') {
-    statusMessage.innerHTML = message;
+    statusMessage.textContent = message;
     statusMessage.className = 'status ' + type;
     setTimeout(() => {
         statusMessage.className = 'status';
-    }, 5000);
+    }, STATUS_MESSAGE_DURATION);
 }

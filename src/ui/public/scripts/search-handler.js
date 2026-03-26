@@ -8,6 +8,11 @@ import { getWebview } from './webview-manager.js';
 import { generateFormFillScript } from './form-filler.js';
 import { pollForPageCount } from './page-navigator.js';
 import { captureScreenshot } from './screenshot.js';
+import {
+    SEARCH_ANGULAR_WAIT,
+    SEARCH_RESULTS_WAIT,
+    SEARCH_VIEW_DETAILS_WAIT
+} from './variables.js';
 
 /**
  * Capture screenshot and display it in the log
@@ -99,7 +104,7 @@ function waitForFormFill(webview, descType, descNumber) {
                         // Wait for results page and look for "View Details" buttons
                         setTimeout(() => {
                             waitForViewDetails(webview);
-                        }, 3000);
+                        }, SEARCH_RESULTS_WAIT);
                     } else {
                         addLog('warning', 'Search may not have completed');
                         showStatus('May not have completed search', 'warning');
@@ -110,7 +115,7 @@ function waitForFormFill(webview, descType, descNumber) {
                     console.error('Error:', err);
                     resolve();
                 });
-            }, 3000); // Wait 3 seconds for Angular
+            }, SEARCH_ANGULAR_WAIT); // Wait for Angular to render
 
             // Remove this listener after first use
             webview.removeEventListener('dom-ready', fillForm);
@@ -154,7 +159,7 @@ function waitForViewDetails(webview) {
             pollForPageCount(webview, () => {
                 takeAndDisplayScreenshot(webview);
             });
-        }, 1500);
+        }, SEARCH_VIEW_DETAILS_WAIT);
     }).catch(err => {
         addLog('error', 'View Details execution failed: ' + err.message);
     });

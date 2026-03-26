@@ -3,6 +3,12 @@
  */
 
 import { addLog } from './logger.js';
+import {
+    SCREENSHOT_SPINNER_APPEAR_MAX,
+    SCREENSHOT_SPINNER_GONE_MAX,
+    SCREENSHOT_POLL_INTERVAL,
+    SCREENSHOT_BUFFER
+} from './variables.js';
 
 /**
  * Wait for the page to fully load using spinner detection
@@ -15,9 +21,9 @@ import { addLog } from './logger.js';
  * @returns {Promise} Promise that resolves when page is ready
  */
 async function waitForCanvasReady(webview) {
-    const maxWaitForSpinner = 2000; // Max 2 seconds to wait for spinner to appear
-    const maxWaitForLoad = 10000; // Max 10 seconds to wait for spinner to disappear
-    const pollInterval = 10; // 10ms between polls
+    const maxWaitForSpinner = SCREENSHOT_SPINNER_APPEAR_MAX;
+    const maxWaitForLoad = SCREENSHOT_SPINNER_GONE_MAX;
+    const pollInterval = SCREENSHOT_POLL_INTERVAL;
 
     addLog('info', 'Waiting for page load...');
 
@@ -78,11 +84,11 @@ async function waitForCanvasReady(webview) {
                             height: result.canvasHeight
                         });
 
-                        // Step 3: Wait 500ms buffer before resolving
+                        // Step 3: Wait buffer before resolving
                         setTimeout(() => {
                             addLog('success', 'Page fully loaded - ready for screenshot');
                             resolve();
-                        }, 500);
+                        }, SCREENSHOT_BUFFER);
                     } else if (Date.now() - loadStartTime < maxWaitForLoad) {
                         // Still loading, continue polling
                         // (interval will call this again)

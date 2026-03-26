@@ -3,6 +3,7 @@
  */
 
 import { addLog } from './logger.js';
+import { PAGE_COUNT_MAX_POLLS, PAGE_COUNT_POLL_INTERVAL } from './variables.js';
 
 /**
  * Poll for page count element and navigate to middle page
@@ -11,7 +12,7 @@ import { addLog } from './logger.js';
  * @returns {Promise} Promise that resolves when navigation is complete
  */
 export function pollForPageCount(webview, onScreenshotReady) {
-    const maxPolls = 30; // 15 seconds total
+    const maxPolls = PAGE_COUNT_MAX_POLLS;
 
     const poll = (pollCount = 0) => {
         return webview.executeJavaScript(`
@@ -63,7 +64,7 @@ export function pollForPageCount(webview, onScreenshotReady) {
             } else if (pollCount < maxPolls) {
                 // Poll again after 500ms
                 return new Promise(resolve => {
-                    setTimeout(() => resolve(poll(pollCount + 1)), 500);
+                    setTimeout(() => resolve(poll(pollCount + 1)), PAGE_COUNT_POLL_INTERVAL);
                 });
             } else {
                 // Max polls reached - take screenshot anyway

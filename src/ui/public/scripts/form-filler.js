@@ -2,6 +2,12 @@
  * Form Filler Module - Fills in the search form on the Onland website
  */
 
+import {
+    FORM_DROPDOWN_WAIT,
+    FORM_SEARCH_CLICK_INTERVAL,
+    FORM_SEARCH_MAX_CLICKS
+} from './variables.js';
+
 /**
  * Generate the JavaScript code to fill the search form
  * @param {string} descType - The description type
@@ -125,7 +131,7 @@ export function generateFormFillScript(descType, descNumber) {
                     } else {
                         log.push({ step: 'warning', message: 'No mat-option elements found for dropdown' });
                     }
-                }, 500);
+                }, ${FORM_DROPDOWN_WAIT});
             } else {
                 log.push({ step: 'error', message: 'Could not find Description Type input' });
             }
@@ -149,7 +155,7 @@ export function generateFormFillScript(descType, descNumber) {
 
                 // Click multiple times to ensure submission
                 let clickCount = 0;
-                const maxClicks = 5;
+                const maxClicks = ${FORM_SEARCH_MAX_CLICKS};
                 const clickInterval = setInterval(() => {
                     searchBtn.click();
                     clickCount++;
@@ -158,7 +164,7 @@ export function generateFormFillScript(descType, descNumber) {
                     if (clickCount >= maxClicks) {
                         clearInterval(clickInterval);
                     }
-                }, 1000);
+                }, ${FORM_SEARCH_CLICK_INTERVAL});
             } else {
                 log.push({ step: 'error', message: 'searchButton not found by ID' });
             }

@@ -120,25 +120,6 @@ body {
     margin-top: 4px;
 }
 
-.log-page-snapshot {
-    margin-top: 8px;
-    padding: 8px;
-    background: #0f0f1a;
-    border: 1px solid #0f3460;
-    border-radius: 4px;
-    font-family: 'Monaco', 'Menlo', monospace;
-    font-size: 10px;
-    max-height: 300px;
-    overflow-y: auto;
-}
-
-.log-page-snapshot pre {
-    margin: 0;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    color: #888;
-}
-
 h1 {
     text-align: center;
     margin-bottom: 20px;
@@ -216,18 +197,6 @@ button.secondary {
     background: #e94560;
 }
 
-.screenshot-container {
-    text-align: center;
-    margin: 20px 0;
-}
-
-#screenshot {
-    max-width: 100%;
-    max-height: 500px;
-    border: 2px solid #0f3460;
-    border-radius: 8px;
-}
-
 .status {
     padding: 10px 15px;
     background: #0f3460;
@@ -244,13 +213,6 @@ button.secondary {
 .status.error {
     background: #1a1a2e;
     border-left: 4px solid #e94560;
-}
-
-.page-info {
-    text-align: center;
-    margin: 10px 0;
-    font-size: 18px;
-    color: #4ecca3;
 }
 
 .navigation-controls {
