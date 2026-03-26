@@ -10,6 +10,21 @@ import { pollForPageCount } from './page-navigator.js';
 import { captureScreenshot } from './screenshot.js';
 
 /**
+ * Capture screenshot and display it in the log
+ * @param {HTMLElement} webview - The webview element
+ */
+async function takeAndDisplayScreenshot(webview) {
+    try {
+        const base64Data = await captureScreenshot(webview);
+        // Remove the data:image/png;base64, prefix for addLog
+        const base64Only = base64Data.replace(/^data:image\/\w+;base64,/, '');
+        addLog('info', 'Screenshot captured', null, base64Only);
+    } catch (err) {
+        addLog('error', 'Screenshot capture failed: ' + err.message);
+    }
+}
+
+/**
  * Set up the search form event listener
  * @param {HTMLFormElement} searchForm - The search form element
  */
@@ -138,7 +153,7 @@ function waitForViewDetails(webview) {
         // Start polling for page count after 2.5 seconds
         setTimeout(() => {
             pollForPageCount(webview, () => {
-                captureScreenshot(webview);
+                takeAndDisplayScreenshot(webview);
             });
         }, 2500);
     }).catch(err => {

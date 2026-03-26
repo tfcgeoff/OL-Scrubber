@@ -1,48 +1,35 @@
 /**
- * Screenshot Module - Handles page data capture
+ * Screenshot Module - Handles real image capture from webview
  */
 
 import { addLog } from './logger.js';
 
 /**
- * Capture page data (text-based snapshot)
+ * Capture a screenshot image from the webview
  * @param {HTMLElement} webview - The webview element
- * @returns {Promise} Promise that resolves with page data
+ * @returns {Promise<string>} Promise that resolves with base64 PNG data
  */
-export function captureScreenshot(webview) {
-    return webview.executeJavaScript(`
-        (() => {
-            try {
-                const pageInfo = {
-                    title: document.title,
-                    url: window.location.href,
-                    timestamp: new Date().toISOString(),
-                    visibleElements: {
-                        inputs: document.querySelectorAll('input').length,
-                        buttons: document.querySelectorAll('button').length,
-                        links: document.querySelectorAll('a').length,
-                        textContent: document.body.innerText.substring(0, 5000)
-                    }
-                };
+export async function captureScreenshot(webview) {
+    return new Promise((resolve, reject) => {
+        try {
+            webview.capturePage((image) => {
+                if (image) {
+                    // Convert NativeImage to PNG buffer
+                    const buffer = image.toPNG();
+                    // Convert to base64
+                    const base64Data = buffer.toString('base64');
 
-                return JSON.stringify(pageInfo);
-            } catch (err) {
-                return JSON.stringify({
-                    error: err.message,
-                    title: document.title,
-                    url: window.location.href
-                });
-            }
-        })()
-    `).then(jsonData => {
-        const pageData = JSON.parse(jsonData);
-        addLog('info', 'Page snapshot captured', pageData);
-        return pageData;
-    }).catch(err => {
-        addLog('error', 'Page snapshot capture exception', {
-            message: err.message,
-            stack: err.stack ? err.stack.split('\n').slice(0, 3).join('\n') : 'no stack'
-        });
-        return null;
+                    addLog('success', 'Screenshot captured', { size: buffer.length });
+                    resolve('data:image/png;base64,' + base64Data);
+                } else {
+                    const err = 'capturePage returned null';
+                    addLog('error', 'Screenshot capture failed: ' + err);
+                    reject(new Error(err));
+                }
+            });
+        } catch (err) {
+            addLog('error', 'Screenshot capture error: ' + err.message);
+            reject(err);
+        }
     });
 }
