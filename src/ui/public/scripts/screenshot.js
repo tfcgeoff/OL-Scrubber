@@ -78,11 +78,11 @@ async function waitForCanvasReady(webview) {
                             height: result.canvasHeight
                         });
 
-                        // Step 3: Wait 25ms buffer before resolving
+                        // Step 3: Wait 500ms buffer before resolving
                         setTimeout(() => {
                             addLog('success', 'Page fully loaded - ready for screenshot');
                             resolve();
-                        }, 25);
+                        }, 500);
                     } else if (Date.now() - loadStartTime < maxWaitForLoad) {
                         // Still loading, continue polling
                         // (interval will call this again)
