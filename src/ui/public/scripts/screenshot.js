@@ -5,85 +5,114 @@
 import { addLog } from './logger.js';
 
 /**
- * Wait for the canvas element to be loaded with actual content
+ * Wait for the page to fully load using spinner detection
+ * Sequence:
+ * 1. Wait for spinner to appear (page change started)
+ * 2. Poll every 10ms until spinner is gone (page loaded)
+ * 3. Wait 25ms buffer
+ * 4. Resolve (ready for screenshot)
  * @param {HTMLElement} webview - The webview element
- * @returns {Promise} Promise that resolves when canvas is ready
+ * @returns {Promise} Promise that resolves when page is ready
  */
 async function waitForCanvasReady(webview) {
-    const maxPolls = 100; // 10 seconds total (100 * 100ms)
-    const pollDelay = 100; // 100ms between polls
+    const maxWaitForSpinner = 2000; // Max 2 seconds to wait for spinner to appear
+    const maxWaitForLoad = 10000; // Max 10 seconds to wait for spinner to disappear
+    const pollInterval = 10; // 10ms between polls
 
-    addLog('info', 'Waiting for canvas to load...');
+    addLog('info', 'Waiting for page load...');
 
-    return new Promise((resolve, reject) => {
-        const poll = (pollCount = 0) => {
+    return new Promise((resolve) => {
+        // Step 1: Wait for spinner to appear (constant while loop)
+        const startTime = Date.now();
+        const checkForSpinner = () => {
             webview.executeJavaScript(`
                 (() => {
-                    // Find the canvas element
-                    const canvas = document.querySelector('canvas');
-
-                    if (!canvas) {
-                        return { ready: false, reason: 'No canvas found' };
-                    }
-
-                    // Check if canvas has valid dimensions
-                    if (canvas.width <= 0 || canvas.height <= 0) {
-                        return { ready: false, reason: 'Canvas has no dimensions', width: canvas.width, height: canvas.height };
-                    }
-
-                    // Check if canvas has actual content (not blank/transparent)
-                    const ctx = canvas.getContext('2d');
-                    if (!ctx) {
-                        return { ready: false, reason: 'Cannot get canvas context' };
-                    }
-
-                    // Sample a few pixels to check if there's actual content
-                    // Get image data from center of canvas
-                    const sampleX = Math.floor(canvas.width / 2);
-                    const sampleY = Math.floor(canvas.height / 2);
-                    const pixelData = ctx.getImageData(sampleX, sampleY, 1, 1).data;
-
-                    // Check if pixel is not transparent (alpha > 0)
-                    const hasContent = pixelData[3] > 0;
-
-                    if (!hasContent) {
-                        return { ready: false, reason: 'Canvas appears blank (transparent pixels)', pixelData: pixelData };
-                    }
-
-                    // Canvas is ready with content
-                    return {
-                        ready: true,
-                        width: canvas.width,
-                        height: canvas.height,
-                        pixelData: pixelData
-                    };
+                    const loader = document.querySelector('.loader');
+                    return { hasSpinner: !!loader };
                 })()
             `).then(result => {
-                if (result.ready) {
-                    addLog('success', 'Canvas ready with content', {
-                        width: result.width,
-                        height: result.height
-                    });
-                    resolve();
-                } else if (pollCount < maxPolls) {
-                    // Log every 10 polls (every 1 second) to avoid spam
-                    if (pollCount % 10 === 0) {
-                        addLog('info', 'Waiting for canvas... ' + result.reason);
-                    }
-                    // Poll again
-                    setTimeout(() => poll(pollCount + 1), pollDelay);
+                if (result.hasSpinner) {
+                    addLog('info', 'Spinner detected - page change started');
+                    // Step 2: Wait for spinner to disappear (setInterval 10ms)
+                    waitForSpinnerGone();
+                } else if (Date.now() - startTime < maxWaitForSpinner) {
+                    // Keep checking for spinner
+                    setTimeout(checkForSpinner, pollInterval);
                 } else {
-                    // Max polls reached - canvas never became ready
-                    addLog('error', 'Canvas not ready after 10 seconds - taking screenshot anyway');
-                    resolve(); // Resolve anyway so we can attempt screenshot
+                    // Spinner never appeared - might already be loaded or error
+                    addLog('warning', 'Spinner never appeared - assuming page is already loaded');
+                    waitForSpinnerGone();
                 }
             }).catch(err => {
-                addLog('error', 'Canvas check failed: ' + err.message);
-                resolve(); // Resolve anyway so we can attempt screenshot
+                addLog('error', 'Spinner check failed: ' + err.message);
+                waitForSpinnerGone(); // Continue anyway
             });
         };
 
-        poll();
+        // Step 2: Poll every 10ms until spinner is gone
+        const waitForSpinnerGone = () => {
+            const loadStartTime = Date.now();
+            let intervalId = null;
+
+            const pollForLoad = () => {
+                webview.executeJavaScript(`
+                    (() => {
+                        const loader = document.querySelector('.loader');
+                        const canvas = document.querySelector('canvas');
+                        return {
+                            hasSpinner: !!loader,
+                            hasCanvas: !!canvas,
+                            canvasWidth: canvas ? canvas.width : 0,
+                            canvasHeight: canvas ? canvas.height : 0
+                        };
+                    })()
+                `).then(result => {
+                    if (!result.hasSpinner && result.hasCanvas) {
+                        // Spinner is gone and canvas exists
+                        if (intervalId) {
+                            clearInterval(intervalId);
+                            intervalId = null;
+                        }
+                        addLog('success', 'Spinner gone, canvas present', {
+                            width: result.canvasWidth,
+                            height: result.canvasHeight
+                        });
+
+                        // Step 3: Wait 25ms buffer before resolving
+                        setTimeout(() => {
+                            addLog('success', 'Page fully loaded - ready for screenshot');
+                            resolve();
+                        }, 25);
+                    } else if (Date.now() - loadStartTime < maxWaitForLoad) {
+                        // Still loading, continue polling
+                        // (interval will call this again)
+                    } else {
+                        // Timeout - spinner never went away
+                        if (intervalId) {
+                            clearInterval(intervalId);
+                            intervalId = null;
+                        }
+                        addLog('error', 'Timeout waiting for spinner to disappear - taking screenshot anyway');
+                        resolve();
+                    }
+                }).catch(err => {
+                    addLog('error', 'Load poll failed: ' + err.message);
+                    if (intervalId) {
+                        clearInterval(intervalId);
+                        intervalId = null;
+                    }
+                    resolve(); // Continue anyway
+                });
+            };
+
+            // Start polling every 10ms
+            intervalId = setInterval(pollForLoad, pollInterval);
+            // Immediate first check
+            pollForLoad();
+        };
+
+        // Start the process
+        checkForSpinner();
     });
 }
 
@@ -127,7 +156,7 @@ export async function captureScreenshot(webview, callback) {
         return;
     }
 
-    // Wait for canvas to be ready before taking screenshot
+    // Wait for page to fully load before taking screenshot
     await waitForCanvasReady(webview);
 
     // Call the IPC method to capture screenshot from main process
