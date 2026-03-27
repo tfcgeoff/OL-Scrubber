@@ -246,7 +246,7 @@ app.whenReady().then(() => {
     ses.webRequest.onBeforeRequest(
         { urls: ['*://www.onland.ca/api/v1/books/transactions/*/pages*'] },
         (details, callback) => {
-            console.log('ONLAND PAGE API:', details.url, details.method);
+            try { console.log('ONLAND PAGE API:', details.url, details.method); } catch(e) {}
             // Forward the captured URL to the renderer so it knows the API pattern
             if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send('onland:pageApiUrl', {
@@ -272,7 +272,7 @@ app.whenReady().then(() => {
         item.on('updated', (e, state) => {
             if (state === 'completed') {
                 lastDownload = { filename, path: savePath };
-                console.log('Download complete:', savePath);
+                try { console.log('Download complete:', savePath); } catch(e) {}
                 if (mainWindow && !mainWindow.isDestroyed()) {
                     mainWindow.webContents.send('download:complete', { filename, path: savePath });
                 }
