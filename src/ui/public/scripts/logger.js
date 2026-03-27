@@ -32,7 +32,8 @@ export function addLog(level, message, data = null, screenshot = null) {
     const stack = new Error().stack;
     const callerLine = stack ? stack.split('\n')[2] : '';
     const match = callerLine.match(/(?:https?:\/\/[^/]+)?(.+):(\d+):\d+/);
-    const source = match ? `${match[1]}:${match[2]}` : '';
+    // Strip directory path, keep just filename:line
+    const source = match ? `${match[1].split('/').pop()}:${match[2]}` : '';
 
     console.log(`[${level.toUpperCase()}]`, source, message, data || '');
 
@@ -70,32 +71,13 @@ export function addLog(level, message, data = null, screenshot = null) {
         entry.appendChild(dataDiv);
     }
 
-    // Screenshot
-    if (screenshot) {
-        const screenshotDiv = document.createElement('div');
-        screenshotDiv.className = 'log-screenshot';
-        const img = document.createElement('img');
-        img.src = 'data:image/png;base64,' + screenshot;
-        img.alt = message;
-        img.style.maxWidth = '100%';
-        img.style.cursor = 'pointer';
-        img.style.borderRadius = '4px';
-        img.style.marginTop = '8px';
-        // Make screenshot clickable to view full size
-        img.onclick = () => {
-            const win = window.open('', '_blank');
-            if (win) {
-                win.document.title = img.alt;
-                const newImg = win.document.createElement('img');
-                newImg.src = img.src;
-                newImg.style.width = '100%';
-                win.document.body.appendChild(newImg);
-            }
-        };
-        screenshotDiv.appendChild(img);
-        entry.appendChild(screenshotDiv);
-    }
+    // Screenshots are no longer shown in the log panel (view via remote control instead)
 
     logsContainer.appendChild(entry);
     logsContainer.scrollTop = logsContainer.scrollHeight;
+
+    // Push to REST API for remote viewing
+    if (window.electronAPI && window.electronAPI.pushLog) {
+        window.electronAPI.pushLog({ level, message, source, data, time: new Date().toISOString() });
+    }
 }

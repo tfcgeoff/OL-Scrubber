@@ -42,6 +42,7 @@
                 <span id="navControls" class="hidden" style="margin-left: auto;">
                     <input type="text" id="navDecision" placeholder="e.g., 0, +5, -3, +50%, 200" style="width: 200px;">
                     <button id="submitNavBtn" type="button">Go</button>
+                    <button id="downloadSelectedBtn" type="button" class="hidden">Download Selected</button>
                 </span>
             </form>
         </div>
@@ -85,8 +86,12 @@
         import { initLogger, addLog } from './scripts/logger.js';
         import { initWebview, getWebview } from './scripts/webview-manager.js';
         import { initUI, showStatus } from './scripts/ui.js';
-        import { setupSearchHandler } from './scripts/search-handler.js';
-        import { setupNavigationHandler } from './scripts/navigation-handler.js';
+        import { setupSearchHandler, executeSearch } from './scripts/search-handler.js';
+        import { setupNavigationHandler, executeNavCommand } from './scripts/navigation-handler.js';
+        import { setupDownloadHandler } from './scripts/download-handler.js';
+        import { pollForPageCount } from './scripts/page-navigator.js';
+        import { captureScreenshot, installFetchInterceptor } from './scripts/screenshot.js';
+        import { getState } from './scripts/variables.js';
 
         // Get DOM elements
         const webview = document.getElementById('onlandWebview');
@@ -107,6 +112,117 @@
         const navInput = document.getElementById('navDecision');
         const navBtn = document.getElementById('submitNavBtn');
         setupNavigationHandler(navInput, navBtn);
+
+        // Setup Download Selected button
+        const downloadSelectedBtn = document.getElementById('downloadSelectedBtn');
+        setupDownloadHandler(downloadSelectedBtn);
+
+        // Listen for nav commands from REST API (secondary display)
+        if (window.electronAPI && window.electronAPI.onNavCommand) {
+            window.electronAPI.onNavCommand((command) => {
+                addLog('info', 'Nav command from secondary display: ' + command);
+                executeNavCommand(command);
+            });
+        }
+
+        // Listen for search commands from REST API (secondary display)
+        if (window.electronAPI && window.electronAPI.onSearchCommand) {
+            window.electronAPI.onSearchCommand((params) => {
+                addLog('info', 'Search command from secondary display', params);
+                // Populate form fields from the search command
+                document.getElementById('lro').value = params.lro;
+                document.getElementById('descriptionType').value = params.descType;
+                document.getElementById('descriptionNumber').value = params.descNumber;
+                executeSearch(params.lro, params.descType, params.descNumber);
+            });
+        }
+
+        // Listen for intercepted Onland page API URLs (from main process network filter)
+        if (window.electronAPI && window.electronAPI.onPageApiUrl) {
+            window.electronAPI.onPageApiUrl((data) => {
+                // Extract base URL (without ?page=N) for reuse
+                // e.g. "https://www.onland.ca/api/v1/books/transactions/34122282/pages"
+                const baseUrl = data.url.split('?')[0];
+                // Always update (each new book gets a different transaction ID)
+                setState('pageApiBaseUrl', baseUrl);
+                // Extract transaction ID from URL for direct API fetch
+                const txMatch = data.url.match(/\/transactions\/(\d+)\//);
+                if (txMatch) {
+                    setState('transactionId', txMatch[1]);
+                }
+                addLog('success', 'Page API base URL captured', { baseUrl, method: data.method });
+            });
+        }
+
+        // Listen for next-book command from REST API
+        if (window.electronAPI && window.electronAPI.onNextBookCommand) {
+            window.electronAPI.onNextBookCommand(() => {
+                addLog('info', 'Next book command from secondary display');
+                const webview = getWebview();
+                if (!webview) return;
+
+                const lro = getState('lro');
+                const descType = getState('descType');
+                const descNumber = getState('descNumber');
+                const currentBook = (getState('currentBook') || 1) + 1;
+
+                // Navigate back to search results
+                const searchUrl = `https://www.onland.ca/ui/${lro}/books/search/1?lcv1=${encodeURIComponent(descNumber)}&lct1=${encodeURIComponent(descType)}&page=1`;
+                webview.src = searchUrl;
+                setState('currentBook', currentBook);
+
+                webview.addEventListener('dom-ready', function onReady() {
+                    webview.removeEventListener('dom-ready', onReady);
+
+                    // Wait for results, then click the next View Details button
+                    const waitForResults = () => {
+                        webview.executeJavaScript(`
+                            (() => {
+                                const viewBtns = document.querySelectorAll('button[aria-label*="View Details"]');
+                                return { count: viewBtns.length };
+                            })()
+                        `).then(result => {
+                            if (result.count >= currentBook) {
+                                addLog('info', 'Opening book ' + currentBook);
+                                webview.executeJavaScript(`
+                                    (() => {
+                                        const btns = document.querySelectorAll('button[aria-label*="View Details"]');
+                                        if (btns[currentBook - 1]) {
+                                            btns[currentBook - 1].click();
+                                            return { clicked: true };
+                                        }
+                                        return { clicked: false };
+                                    })()
+                                `).then(clickResult => {
+                                    if (clickResult.clicked) {
+                                        // Install fetch interceptor before book viewer loads
+                                        installFetchInterceptor(webview);
+                                        // Wait for book page, detect page count, screenshot
+                                        const waitForBookPage = () => {
+                                            webview.executeJavaScript(`window.location.href`).then(url => {
+                                                if (!url.includes('/search')) {
+                                                    pollForPageCount(webview, () => {
+                                                        captureScreenshot(webview, (data) => {
+                                                            if (data) addLog('info', 'Screenshot captured for book ' + currentBook);
+                                                        });
+                                                    });
+                                                } else {
+                                                    setTimeout(waitForBookPage, 500);
+                                                }
+                                            });
+                                        };
+                                        waitForBookPage();
+                                    }
+                                });
+                            } else {
+                                addLog('warning', 'No more books in results');
+                            }
+                        });
+                    };
+                    setTimeout(waitForResults, 1000);
+                });
+            });
+        }
 
         // Initialize log
         addLog('info', 'Onland Data Entry loaded');

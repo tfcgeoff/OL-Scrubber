@@ -10,11 +10,19 @@ const state = {
     totalBooks: null,
     currentBook: null,
     totalPages: null,
-    currentPage: null
+    currentPage: null,
+    pagesSelected: 0,
+    pageApiBaseUrl: null,  // e.g. "https://www.onland.ca/api/v1/books/transactions/34122282/pages" (set by main process)
+    transactionId: null     // e.g. "34122282" (extracted from page API URL)
 };
 
 export function setState(key, value) {
     state[key] = value;
+
+    // Sync state to main process for REST API secondary display
+    if (window.electronAPI && window.electronAPI.pushState) {
+        window.electronAPI.pushState({ ...state });
+    }
 }
 
 export function getState(key) {

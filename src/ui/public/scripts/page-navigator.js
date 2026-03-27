@@ -5,7 +5,76 @@
 import { addLog } from './logger.js';
 import { PAGE_COUNT_MAX_POLLS, PAGE_COUNT_POLL_INTERVAL } from './variables.js';
 import { setState, getState } from './variables.js';
-import { setNavigationVisible, executeNavCommand } from './navigation-handler.js';
+import { executeNavCommand } from './navigation-handler.js';
+
+/**
+ * DEBUG: Test fetching a page directly from the Onland API
+ * Probes for transaction ID and tests a page fetch
+ * TODO: Remove after confirming we can fetch pages directly
+ */
+function probePDFjs(webview) {
+    webview.executeJavaScript(`
+        (async () => {
+            const results = {};
+
+            // 1. Get current URL to find transaction ID
+            results.url = window.location.href;
+
+            // 2. Find page API URLs from network performance entries
+            const pageEntries = performance.getEntriesByType('resource')
+                .filter(e => e.name && e.name.includes('/pages?page='))
+                .map(e => e.name);
+            results.pageApiUrls = pageEntries.slice(0, 5);
+
+            // 3. Extract transaction ID from the URL pattern
+            const txMatch = window.location.href.match(/\\/transactions\\/(\\d+)/);
+            results.transactionId = txMatch ? txMatch[1] : null;
+
+            // 4. If we found a page URL, try fetching one directly
+            if (pageEntries.length > 0) {
+                const templateUrl = pageEntries[0];
+                // Extract the base URL (replace page number with test page)
+                const pageApiUrl = templateUrl.replace(/page=\d+/, 'page=1');
+                results.pageApiUrl = pageApiUrl;
+
+                try {
+                    const resp = await fetch(pageApiUrl, {
+                        method: 'POST',
+                        credentials: 'include'
+                    });
+                    results.fetchStatus = resp.status;
+                    results.fetchContentType = resp.headers.get('content-type');
+
+                    const contentType = resp.headers.get('content-type') || '';
+                    if (contentType.includes('image')) {
+                        // Response IS the image directly
+                        const blob = await resp.blob();
+                        results.imageBlobSize = blob.size;
+                        results.imageType = blob.type;
+                        // Get first few bytes to confirm it's an image
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                            results.base64Prefix = reader.result.substring(0, 50);
+                        };
+                        reader.readAsDataURL(blob);
+                        await new Promise(r => { reader.onloadend = r; reader.onload = null; });
+                    } else {
+                        // Response might be JSON
+                        const text = await resp.text();
+                        results.responseTextPreview = text.substring(0, 500);
+                        results.isJson = text.trim().startsWith('{') || text.trim().startsWith('[');
+                    }
+                } catch(e) {
+                    results.fetchError = e.message;
+                }
+            }
+
+            return results;
+        })()
+    `).then(results => {
+        addLog('info', 'Page API probe results', results);
+    });
+}
 
 /**
  * Poll for page count element and navigate to middle page
@@ -68,7 +137,12 @@ export function pollForPageCount(webview, onScreenshotReady) {
                     currentBook: getState('currentBook')
                 });
 
-                setNavigationVisible(true);
+                // DEBUG: Probe for page API (temporary)
+                probePDFjs(webview);
+
+                // setNavigationVisible is called by executeNavCommand which is in navigation-handler.js
+                // Importing it here would create a circular dependency, so we call it indirectly
+                // The 50% command below triggers setNavigationVisible via setupNavigationHandler
 
                 // Navigate to 50% using the same code path as manual commands
                 executeNavCommand('50%');

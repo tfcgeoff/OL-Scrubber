@@ -7,7 +7,7 @@ import { showStatus } from './ui.js';
 import { getWebview } from './webview-manager.js';
 // import { generateFormFillScript } from './form-filler.js';
 import { pollForPageCount } from './page-navigator.js';
-import { captureScreenshot } from './screenshot.js';
+import { captureScreenshot, installFetchInterceptor } from './screenshot.js';
 import { setState } from './variables.js';
 import {
     SEARCH_FORM_MAX_POLLS,
@@ -62,7 +62,7 @@ export function setupSearchHandler(searchForm) {
  * @param {string} descNumber - The description number
  * @returns {Promise} Promise that resolves when search is complete
  */
-async function executeSearch(lro, descType, descNumber) {
+export async function executeSearch(lro, descType, descNumber) {
     const webview = getWebview();
 
     // Navigate directly to search results URL
@@ -196,6 +196,9 @@ function waitForResults(webview) {
                         addLog('success', 'View Details clicked');
                         // addLog('info', 'Waiting for book page to load...');
 
+                        // Install fetch interceptor before book viewer loads pages
+                        installFetchInterceptor(webview);
+
                         // Wait for SPA navigation to complete by polling the URL
                         const waitForBookPage = () => {
                             let attempts = 0;
@@ -203,9 +206,9 @@ function waitForResults(webview) {
                                 webview.executeJavaScript(`window.location.href`).then(url => {
                                     if (!url.includes('/search') || attempts > 30) {
                                         // addLog('info', 'Book page URL detected', { url });
-                                        pollForPageCount(webview, () => {
-                                            takeAndDisplayScreenshot(webview);
-                                        });
+                                        pollForPageCount(webview);
+                                        // takeAndDisplayScreenshot is no longer needed here —
+                                        // pollForPageCount → executeNavCommand('50%') → captureScreenshot handles it
                                     } else {
                                         attempts++;
                                         setTimeout(check, 500);
