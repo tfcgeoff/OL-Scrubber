@@ -1,9 +1,10 @@
 /**
- * Page Navigator Module - Handles page count detection and middle page navigation
+ * Page Navigator Module - Handles page count detection and page navigation
  */
 
 import { addLog } from './logger.js';
 import { PAGE_COUNT_MAX_POLLS, PAGE_COUNT_POLL_INTERVAL } from './variables.js';
+import { setState, getState } from './variables.js';
 
 /**
  * Poll for page count element and navigate to middle page
@@ -15,49 +16,59 @@ export function pollForPageCount(webview, onScreenshotReady) {
     const maxPolls = PAGE_COUNT_MAX_POLLS;
 
     const poll = (pollCount = 0) => {
+        // addLog('info', 'pollForPageCount called', { pollCount: pollCount });
+
         return webview.executeJavaScript(`
             (() => {
-                // Get elements by class name "page-count"
-                const pageCountDivs = document.getElementsByClassName('page-count');
-
-                if (pageCountDivs.length === 0) {
-                    return { found: false, method: 'no-page-count-divs' };
-                }
-
-                // Get the first page-count div and find the <p> inside it
-                const firstDiv = pageCountDivs[0];
-                const pElement = firstDiv.querySelector('p');
-
-                if (!pElement) {
-                    return { found: false, method: 'no-p-element' };
-                }
-
-                const text = pElement.textContent || pElement.innerText || '';
-                const match = text.match(/of\\s+(\\d+)/);
-
-                if (!match) {
-                    return { found: false, method: 'no-match', text: text };
-                }
-
-                const totalPages = parseInt(match[1], 10);
-                const middlePage = Math.max(1, Math.floor(totalPages / 2));
-
-                return {
-                    found: true,
-                    totalPages: totalPages,
-                    middlePage: middlePage,
-                    text: text
-                };
+                const divs = document.getElementsByClassName('page-count');
+                return JSON.stringify(Array.from(divs).map(d => d.outerHTML));
             })()
-        `).then(pageResult => {
+        `).then(raw => {
+            const htmlArray = JSON.parse(raw);
+            // console.log('page-count HTML:', htmlArray);
+
+            const pageResult = { found: false, divs: htmlArray };
+
+            if (htmlArray.length === 0) {
+                pageResult.reason = 'no-page-count-elements';
+            } else {
+                // Extract text from HTML
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = htmlArray[0];
+                const text = tempDiv.innerText || tempDiv.textContent || '';
+
+                const parts = text.split('of');
+                if (parts.length < 2) {
+                    pageResult.reason = 'no-of-in-text';
+                    pageResult.text = text;
+                } else {
+                    const totalPages = parseInt(parts[1].trim(), 10);
+                    if (isNaN(totalPages) || totalPages < 1) {
+                        pageResult.reason = 'invalid-number';
+                        pageResult.text = text;
+                    } else {
+                        pageResult.found = true;
+                        pageResult.totalPages = totalPages;
+                        pageResult.targetPage = Math.max(1, Math.floor(totalPages / 2));
+                        pageResult.text = text.trim();
+                    }
+                }
+            }
+
+            // addLog('info', 'Page count poll (' + pollCount + ')', pageResult);
+
             if (pageResult.found) {
-                addLog('success', 'Page count loaded', {
+                setState('totalPages', pageResult.totalPages);
+                setState('currentPage', pageResult.targetPage);
+
+                addLog('success', 'Book page count detected', {
                     totalPages: pageResult.totalPages,
-                    middlePage: pageResult.middlePage
+                    targetPage: pageResult.targetPage,
+                    totalBooks: getState('totalBooks'),
+                    currentBook: getState('currentBook')
                 });
 
-                // Navigate to middle page via the page input box
-                return navigateToMiddlePage(webview, pageResult.middlePage).then(() => {
+                return navigateToPage(webview, pageResult.targetPage).then(() => {
                     onScreenshotReady();
                 });
             } else if (pollCount < maxPolls) {
@@ -65,7 +76,7 @@ export function pollForPageCount(webview, onScreenshotReady) {
                     setTimeout(() => resolve(poll(pollCount + 1)), PAGE_COUNT_POLL_INTERVAL);
                 });
             } else {
-                addLog('error', 'Page count not found after 15 seconds - taking screenshot anyway');
+                addLog('error', 'Book page count not found after 15 seconds - taking screenshot anyway');
                 onScreenshotReady();
                 return Promise.resolve();
             }
@@ -81,37 +92,47 @@ export function pollForPageCount(webview, onScreenshotReady) {
  * @param {number} pageNumber - The page number to navigate to
  * @returns {Promise} Promise that resolves when navigation is complete
  */
-function navigateToMiddlePage(webview, pageNumber) {
+export function navigateToPage(webview, pageNumber) {
     return webview.executeJavaScript(`
-        (() => {
-            const middlePage = ${pageNumber};
+        new Promise(resolve => {
+            setTimeout(() => {
+                const pageInput = document.querySelector('input[aria-label="Jump to Page"]');
+                if (!pageInput) {
+                    resolve({ success: false, message: 'Jump to Page input not found' });
+                    return;
+                }
 
-            // Find the "Jump to Page" input
-            const pageInput = document.querySelector('input[aria-label="Jump to Page"]');
-            if (!pageInput) {
-                return { success: false, message: 'Jump to Page input not found' };
-            }
+                pageInput.value = ${pageNumber};
+                pageInput.dispatchEvent(new Event('input', { bubbles: true }));
+                pageInput.dispatchEvent(new Event('change', { bubbles: true }));
 
-            // Set the value and dispatch events for Angular
-            pageInput.value = middlePage;
-            pageInput.dispatchEvent(new Event('input', { bubbles: true }));
-            pageInput.dispatchEvent(new Event('change', { bubbles: true }));
+                // Press Enter to trigger navigation
+                const enterEvent = new KeyboardEvent('keydown', {
+                    key: 'Enter',
+                    code: 'Enter',
+                    keyCode: 13,
+                    bubbles: true
+                });
+                pageInput.dispatchEvent(enterEvent);
 
-            // Press Enter to trigger navigation
-            const enterEvent = new KeyboardEvent('keydown', {
-                key: 'Enter',
-                code: 'Enter',
-                keyCode: 13,
-                bubbles: true
-            });
-            pageInput.dispatchEvent(enterEvent);
+                // // Focus page-count div to trigger onChange
+                // const pageCountDiv = document.querySelector('.page-count');
+                // if (pageCountDiv) {
+                //     pageCountDiv.focus();
+                // }
 
-            return { success: true, middlePage: middlePage };
-        })()
+                // // setTimeout(() => {
+                // //     pageInput.blur();
+                // }, 200);
+
+                resolve({ success: true, pageNumber: ${pageNumber} });
+            }, 50);
+        })
     `).then(navResult => {
         if (navResult.success) {
-            addLog('info', 'Navigated to middle page via input', {
-                middlePage: navResult.middlePage
+            addLog('info', 'Navigated to page', {
+                pageNumber: navResult.pageNumber,
+                totalPages: getState('totalPages')
             });
         } else {
             addLog('error', 'Page navigation failed: ' + navResult.message);

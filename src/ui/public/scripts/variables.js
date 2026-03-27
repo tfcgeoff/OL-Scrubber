@@ -1,6 +1,33 @@
 /**
- * Variables Module - Centralized timing and configuration constants
+ * Variables Module - Centralized timing, configuration constants, and global state
  */
+
+// Global state
+const state = {
+    lro: null,
+    descType: null,
+    descNumber: null,
+    totalBooks: null,
+    currentBook: null,
+    totalPages: null,
+    currentPage: null
+};
+
+export function setState(key, value) {
+    state[key] = value;
+}
+
+export function getState(key) {
+    return state[key];
+}
+
+export function getAllState() {
+    return { ...state };
+}
+
+export function resetState() {
+    Object.keys(state).forEach(key => state[key] = null);
+}
 
 // Screenshot timing
 export const SCREENSHOT_SPINNER_APPEAR_MAX = 2000;

@@ -8,6 +8,7 @@ import { getWebview } from './webview-manager.js';
 // import { generateFormFillScript } from './form-filler.js';
 import { pollForPageCount } from './page-navigator.js';
 import { captureScreenshot } from './screenshot.js';
+import { setState } from './variables.js';
 import {
     SEARCH_FORM_MAX_POLLS,
     SEARCH_FORM_POLL_INTERVAL
@@ -67,7 +68,14 @@ async function executeSearch(lro, descType, descNumber) {
     // Navigate directly to search results URL
     const searchUrl = `https://www.onland.ca/ui/${lro}/books/search/1?lcv1=${encodeURIComponent(descNumber)}&lct1=${encodeURIComponent(descType)}&page=1`;
 
-    addLog('info', 'Navigating to search results', { url: searchUrl });
+    // addLog('info', 'Navigating to search results', { url: searchUrl });
+
+    setState('lro', lro);
+    setState('descType', descType);
+    setState('descNumber', descNumber);
+    setState('totalBooks', null);
+    setState('totalPages', null);
+    setState('currentPage', null);
     webview.src = searchUrl;
     showStatus('Loading search results...', 'info');
 
@@ -78,7 +86,7 @@ async function executeSearch(lro, descType, descNumber) {
         });
     });
 
-    addLog('info', 'Page loaded - polling for results...');
+    // addLog('info', 'Page loaded - polling for results...');
     waitForResults(webview);
 }
 
@@ -175,6 +183,8 @@ function waitForResults(webview) {
         `).then(result => {
             if (result.status === 'found') {
                 addLog('success', 'Results found', { books: result.count, summary: result.summary });
+                setState('totalBooks', result.count);
+                setState('currentBook', 1);
                 webview.executeJavaScript(`
                     (() => {
                         const btn = document.querySelector('button[aria-label*="View Details"]');
@@ -184,24 +194,27 @@ function waitForResults(webview) {
                 `).then(clickResult => {
                     if (clickResult.clicked) {
                         addLog('success', 'View Details clicked');
-                        addLog('info', 'Waiting for book page to load...');
+                        // addLog('info', 'Waiting for book page to load...');
 
-                        // Wait for navigation to book page before polling for page count
+                        // Wait for SPA navigation to complete by polling the URL
                         const waitForBookPage = () => {
-                            return new Promise((resolve) => {
-                                webview.addEventListener('dom-ready', function onReady() {
-                                    webview.removeEventListener('dom-ready', onReady);
-                                    resolve();
+                            let attempts = 0;
+                            const check = () => {
+                                webview.executeJavaScript(`window.location.href`).then(url => {
+                                    if (!url.includes('/search') || attempts > 30) {
+                                        // addLog('info', 'Book page URL detected', { url });
+                                        pollForPageCount(webview, () => {
+                                            takeAndDisplayScreenshot(webview);
+                                        });
+                                    } else {
+                                        attempts++;
+                                        setTimeout(check, 500);
+                                    }
                                 });
-                            });
+                            };
+                            check();
                         };
-
-                        waitForBookPage().then(() => {
-                            addLog('info', 'Book page loaded - checking for page count...');
-                            pollForPageCount(webview, () => {
-                                takeAndDisplayScreenshot(webview);
-                            });
-                        });
+                        waitForBookPage();
                     } else {
                         addLog('error', 'View Details button disappeared before clicking');
                     }
