@@ -17,11 +17,11 @@ body {
     flex: 1;
     padding: 20px;
     overflow-y: auto;
-    max-width: 50%;
+    max-width: 75%;
 }
 
 .sidebar {
-    width: 50%;
+    width: 25%;
     background: #0f0f1a;
     border-left: 1px solid #0f3460;
     display: flex;

@@ -62,7 +62,7 @@ export function setupSearchHandler(searchForm) {
  * @param {string} descNumber - The description number
  * @returns {Promise} Promise that resolves when search is complete
  */
-async function executeSearch(lro, descType, descNumber) {
+export async function executeSearch(lro, descType, descNumber) {
     const webview = getWebview();
 
     // Navigate directly to search results URL
@@ -203,9 +203,9 @@ function waitForResults(webview) {
                                 webview.executeJavaScript(`window.location.href`).then(url => {
                                     if (!url.includes('/search') || attempts > 30) {
                                         // addLog('info', 'Book page URL detected', { url });
-                                        pollForPageCount(webview, () => {
-                                            takeAndDisplayScreenshot(webview);
-                                        });
+                                        pollForPageCount(webview);
+                                        // takeAndDisplayScreenshot is no longer needed here —
+                                        // pollForPageCount → executeNavCommand('50%') → captureScreenshot handles it
                                     } else {
                                         attempts++;
                                         setTimeout(check, 500);

@@ -131,6 +131,12 @@ function addCurrentPage(webview) {
 
         addLog('success', 'Current page added to selection');
 
+        // Show Download Selected button and increment counter
+        const count = getState('pagesSelected') || 0;
+        setState('pagesSelected', count + 1);
+        const dlBtn = document.getElementById('downloadSelectedBtn');
+        if (dlBtn) dlBtn.classList.remove('hidden');
+
         // Wait briefly then click Next Page
         setTimeout(() => {
             webview.executeJavaScript(`
@@ -174,6 +180,7 @@ function addCurrentPage(webview) {
 let _executeCommand = null;
 
 export function executeNavCommand(rawInput) {
+    if (rawInput) setNavigationVisible(true);
     if (_executeCommand) {
         _executeCommand(rawInput);
     }

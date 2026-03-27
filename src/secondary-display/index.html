@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Onland - Remote Control</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a23;
+            color: #e0e0e0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            background: #16213e;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #0f3460;
+        }
+        .header h1 {
+            font-size: 18px;
+            color: #e94560;
+        }
+        .status {
+            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 3px;
+            background: #1b4332;
+            color: #95d5b2;
+        }
+        .status.error {
+            background: #6a040f;
+            color: #fca5a5;
+        }
+
+        /* Search panel */
+        .search-panel {
+            background: #16213e;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-bottom: 1px solid #0f3460;
+        }
+        .search-panel label {
+            font-size: 12px;
+            color: #a0a0a0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .search-panel input,
+        .search-panel select {
+            padding: 8px 12px;
+            border: 1px solid #0f3460;
+            border-radius: 4px;
+            background: #0a0a23;
+            color: #e0e0e0;
+            font-size: 14px;
+        }
+        .search-panel input:focus,
+        .search-panel select:focus {
+            outline: none;
+            border-color: #e94560;
+        }
+        .search-panel select {
+            cursor: pointer;
+        }
+        .btn {
+            padding: 8px 16px;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            white-space: nowrap;
+        }
+        .btn-primary { background: #e94560; }
+        .btn-primary:hover { background: #c73050; }
+        .btn-secondary { background: #0f3460; }
+        .btn-secondary:hover { background: #1a4a80; }
+
+        /* Screenshot area */
+        .screenshot-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            padding: 16px;
+            background: #0a0a23;
+            min-height: 300px;
+            overflow-y: auto;
+        }
+        .screenshot-container img {
+            width: 90vw;
+            max-width: 90vw;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+        .screenshot-placeholder {
+            color: #555;
+            font-size: 14px;
+        }
+
+        /* Bottom controls */
+        .controls {
+            background: #16213e;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-top: 1px solid #0f3460;
+        }
+        .controls input[type="text"] {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #0f3460;
+            border-radius: 4px;
+            background: #0a0a23;
+            color: #e0e0e0;
+            font-size: 14px;
+        }
+        .controls input[type="text"]:focus {
+            outline: none;
+            border-color: #e94560;
+        }
+        .controls label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: #a0a0a0;
+            cursor: pointer;
+            margin-left: auto;
+        }
+        .controls input[type="checkbox"] {
+            width: auto;
+            flex: none;
+        }
+
+        /* Quick nav buttons */
+        .quick-nav {
+            display: flex;
+            gap: 6px;
+        }
+        .quick-nav button {
+            padding: 6px 12px;
+            background: #1a1a3e;
+            color: #e0e0e0;
+            border: 1px solid #0f3460;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .quick-nav button:hover {
+            background: #0f3460;
+        }
+        .quick-nav button.active {
+            background: #e94560;
+            border-color: #e94560;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Onland - Remote Control</h1>
+        <span class="status" id="connectionStatus">Connecting...</span>
+    </div>
+
+    <!-- Search Panel -->
+    <div class="search-panel">
+        <label for="searchLro">LRO</label>
+        <input type="text" id="searchLro" placeholder="LRO" style="width: 80px;">
+        <label for="searchDescType">Type</label>
+        <select id="searchDescType" style="width: 130px;">
+            <option value="Concession">Concession</option>
+            <option value="Plan">Plan</option>
+            <option value="Section">Section</option>
+            <option value="Condo">Condo</option>
+            <option value="Parcel">Parcel</option>
+        </select>
+        <label for="searchDescNum">#</label>
+        <input type="text" id="searchDescNum" placeholder="#" style="width: 100px;">
+        <button class="btn btn-primary" id="searchBtn">Search</button>
+        <button class="btn btn-secondary" id="searchNextBookBtn">Next Book</button>
+        <button class="btn btn-secondary" id="searchAddBtn">+ Add Page</button>
+        <button class="btn btn-secondary" id="searchDownloadBtn">Download Selected</button>
+    </div>
+
+    <!-- Navigation Controls (replaces state bar — puts nav at top) -->
+    <div class="controls">
+        <div class="quick-nav">
+            <button data-cmd="-10">-10</button>
+            <button data-cmd="-1">-1</button>
+            <button data-cmd="+1">+1</button>
+            <button data-cmd="+10">+10</button>
+            <button data-cmd="+25%">+25%</button>
+            <button data-cmd="50%">50%</button>
+            <button data-cmd="+75%">+75%</button>
+        </div>
+        <input type="text" id="navInput" placeholder="Custom: e.g., 0, +5, -3, +50%, 200">
+        <button class="btn btn-primary" id="navSendBtn">Go</button>
+    </div>
+
+    <!-- Screenshot -->
+    <div class="screenshot-container" id="screenshotContainer">
+        <span class="screenshot-placeholder" id="placeholder">Waiting for screenshot...</span>
+        <img id="screenshotImg" style="display: none;" alt="Onland screenshot">
+    </div>
+
+    <script>
+        // DOM refs
+        const connectionStatus = document.getElementById('connectionStatus');
+        const screenshotImg = document.getElementById('screenshotImg');
+        const placeholder = document.getElementById('placeholder');
+        const navInput = document.getElementById('navInput');
+        const searchLro = document.getElementById('searchLro');
+        const searchDescType = document.getElementById('searchDescType');
+        const searchDescNum = document.getElementById('searchDescNum');
+
+        let lastScreenshotUrl = null;
+
+        // ---- Display screenshot from base64 ----
+        function showScreenshot(base64) {
+            if (!base64) return;
+            if (lastScreenshotUrl) URL.revokeObjectURL(lastScreenshotUrl);
+            lastScreenshotUrl = 'data:image/png;base64,' + base64;
+            screenshotImg.src = lastScreenshotUrl;
+            screenshotImg.style.display = 'block';
+            placeholder.style.display = 'none';
+        }
+
+        // ---- Send command, get screenshot back ----
+        function sendCommand(params) {
+            connectionStatus.textContent = 'Working...';
+            connectionStatus.className = 'status';
+
+            const qs = new URLSearchParams(params).toString();
+            fetch('/api?' + qs)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.screenshot) {
+                        showScreenshot(data.screenshot);
+                    }
+                    connectionStatus.textContent = 'Connected';
+                    connectionStatus.className = 'status';
+                })
+                .catch(() => {
+                    connectionStatus.textContent = 'Error';
+                    connectionStatus.className = 'status error';
+                });
+        }
+
+        // ---- Search ----
+        function sendSearch() {
+            const lro = searchLro.value.trim();
+            const descType = searchDescType.value;
+            const descNumber = searchDescNum.value.trim();
+            if (!lro || !descType || !descNumber) return;
+            sendCommand({ lro, descType, descNumber });
+        }
+
+        document.getElementById('searchBtn').addEventListener('click', sendSearch);
+        [searchLro, searchDescNum].forEach(el => {
+            el.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); sendSearch(); }
+            });
+        });
+
+        // Next Book, Add Page, Download
+        document.getElementById('searchNextBookBtn').addEventListener('click', () => sendCommand({ nextBook: 'true' }));
+        document.getElementById('searchAddBtn').addEventListener('click', () => sendCommand({ incAmt: '0' }));
+        document.getElementById('searchDownloadBtn').addEventListener('click', () => sendCommand({ DL: 'true' }));
+
+        // ---- Navigation ----
+        function sendNavCommand(cmd) {
+            const command = cmd || navInput.value.trim();
+            if (!command) return;
+            sendCommand({ incAmt: command });
+            if (!cmd) navInput.value = '';
+        }
+
+        document.getElementById('navSendBtn').addEventListener('click', () => sendNavCommand());
+        navInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); sendNavCommand(); }
+        });
+
+        // Quick nav buttons
+        document.querySelectorAll('.quick-nav button').forEach(btn => {
+            btn.addEventListener('click', () => sendNavCommand(btn.dataset.cmd));
+        });
+    </script>
+</body>
+</html>
