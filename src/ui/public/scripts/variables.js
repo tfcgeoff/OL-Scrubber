@@ -12,7 +12,8 @@ const state = {
     totalPages: null,
     currentPage: null,
     pagesSelected: 0,
-    pageApiBaseUrl: null  // e.g. "https://www.onland.ca/api/v1/books/transactions/34122282/pages" (set by main process)
+    pageApiBaseUrl: null,  // e.g. "https://www.onland.ca/api/v1/books/transactions/34122282/pages" (set by main process)
+    transactionId: null     // e.g. "34122282" (extracted from page API URL)
 };
 
 export function setState(key, value) {

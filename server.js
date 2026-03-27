@@ -23,6 +23,9 @@ let mainWindow = null;
 // Current state
 let currentState = {};
 
+// Activity logs (received from renderer)
+let activityLogs = [];
+
 // Pending promise resolver - the GET /api handler creates a promise,
 // updateScreenshot() resolves it when the renderer captures
 let pendingResolve = null;
@@ -131,6 +134,11 @@ function stopServer() {
     }
 }
 
+// Logs endpoint - returns activity logs from renderer
+app.get('/api/logs', (req, res) => {
+    res.json({ logs: activityLogs });
+});
+
 /**
  * Update the current state (called by renderer)
  * @param {Object} state - The global state object
@@ -155,9 +163,22 @@ function updateScreenshot(base64Data) {
     }
 }
 
+/**
+ * Push an activity log entry (called by renderer)
+ * @param {Object} entry - Log entry object
+ */
+function pushLog(entry) {
+    activityLogs.push(entry);
+    // Keep last 200 entries
+    if (activityLogs.length > 200) {
+        activityLogs = activityLogs.slice(-200);
+    }
+}
+
 module.exports = {
     startServer,
     stopServer,
     updateState,
-    updateScreenshot
+    updateScreenshot,
+    pushLog
 };

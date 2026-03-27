@@ -90,7 +90,7 @@
         import { setupNavigationHandler, executeNavCommand } from './scripts/navigation-handler.js';
         import { setupDownloadHandler } from './scripts/download-handler.js';
         import { pollForPageCount } from './scripts/page-navigator.js';
-        import { captureScreenshot } from './scripts/screenshot.js';
+        import { captureScreenshot, installFetchInterceptor } from './scripts/screenshot.js';
         import { getState } from './scripts/variables.js';
 
         // Get DOM elements
@@ -145,6 +145,11 @@
                 const baseUrl = data.url.split('?')[0];
                 // Always update (each new book gets a different transaction ID)
                 setState('pageApiBaseUrl', baseUrl);
+                // Extract transaction ID from URL for direct API fetch
+                const txMatch = data.url.match(/\/transactions\/(\d+)\//);
+                if (txMatch) {
+                    setState('transactionId', txMatch[1]);
+                }
                 addLog('success', 'Page API base URL captured', { baseUrl, method: data.method });
             });
         }
@@ -190,6 +195,8 @@
                                     })()
                                 `).then(clickResult => {
                                     if (clickResult.clicked) {
+                                        // Install fetch interceptor before book viewer loads
+                                        installFetchInterceptor(webview);
                                         // Wait for book page, detect page count, screenshot
                                         const waitForBookPage = () => {
                                             webview.executeJavaScript(`window.location.href`).then(url => {

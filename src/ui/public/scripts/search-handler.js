@@ -7,7 +7,7 @@ import { showStatus } from './ui.js';
 import { getWebview } from './webview-manager.js';
 // import { generateFormFillScript } from './form-filler.js';
 import { pollForPageCount } from './page-navigator.js';
-import { captureScreenshot } from './screenshot.js';
+import { captureScreenshot, installFetchInterceptor } from './screenshot.js';
 import { setState } from './variables.js';
 import {
     SEARCH_FORM_MAX_POLLS,
@@ -195,6 +195,9 @@ function waitForResults(webview) {
                     if (clickResult.clicked) {
                         addLog('success', 'View Details clicked');
                         // addLog('info', 'Waiting for book page to load...');
+
+                        // Install fetch interceptor before book viewer loads pages
+                        installFetchInterceptor(webview);
 
                         // Wait for SPA navigation to complete by polling the URL
                         const waitForBookPage = () => {

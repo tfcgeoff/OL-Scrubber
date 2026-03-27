@@ -26,6 +26,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Push screenshot from renderer to main process (for REST API)
     pushScreenshot: (base64Data) => ipcRenderer.invoke('screenshot:update', base64Data),
 
+    // Push activity log to REST API for remote viewing
+    pushLog: (logEntry) => ipcRenderer.invoke('log:push', logEntry),
+
     // Nav command from REST API
     onNavCommand: (callback) => ipcRenderer.on('nav:execute', (_event, command) => callback(command)),
 
@@ -37,6 +40,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // Intercepted Onland page API URLs (from main process network filter)
     onPageApiUrl: (callback) => ipcRenderer.on('onland:pageApiUrl', (_event, data) => callback(data)),
+
+    // Direct page image fetch from Onland API (uses captured auth token)
+    fetchPageImage: (pageNumber) => ipcRenderer.invoke('page:fetch', { pageNumber }),
 
     // Logs
     getLogs: (since) => ipcRenderer.invoke('logs:get', since),

@@ -212,28 +212,48 @@
     <div class="screenshot-container" id="screenshotContainer">
         <span class="screenshot-placeholder" id="placeholder">Waiting for screenshot...</span>
         <img id="screenshotImg" style="display: none;" alt="Onland screenshot">
+        <embed id="screenshotPdf" type="application/pdf" style="display: none; width: 90vw; height: 85vh; border: none; border-radius: 8px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);">
     </div>
 
     <script>
         // DOM refs
         const connectionStatus = document.getElementById('connectionStatus');
         const screenshotImg = document.getElementById('screenshotImg');
+        const screenshotPdf = document.getElementById('screenshotPdf');
         const placeholder = document.getElementById('placeholder');
         const navInput = document.getElementById('navInput');
         const searchLro = document.getElementById('searchLro');
         const searchDescType = document.getElementById('searchDescType');
         const searchDescNum = document.getElementById('searchDescNum');
 
-        let lastScreenshotUrl = null;
-
         // ---- Display screenshot from base64 ----
         function showScreenshot(base64) {
             if (!base64) return;
-            if (lastScreenshotUrl) URL.revokeObjectURL(lastScreenshotUrl);
-            lastScreenshotUrl = 'data:image/png;base64,' + base64;
-            screenshotImg.src = lastScreenshotUrl;
-            screenshotImg.style.display = 'block';
+            // Hide both, show whichever matches
+            screenshotImg.style.display = 'none';
+            screenshotPdf.style.display = 'none';
             placeholder.style.display = 'none';
+
+            // Detect content type from base64 header bytes
+            const isPdf = base64.startsWith('JVBERi0');   // %PDF-
+            const isPng = base64.startsWith('iVBORw0');   // \x89PNG
+
+            if (isPdf) {
+                screenshotPdf.src = 'data:application/pdf;base64,' + base64;
+                screenshotPdf.style.display = 'block';
+                connectionStatus.textContent = 'Connected — PDF ' + (base64.length * 0.75 / 1024).toFixed(0) + ' KB';
+            } else if (isPng) {
+                screenshotImg.src = 'data:image/png;base64,' + base64;
+                screenshotImg.style.display = 'block';
+                connectionStatus.textContent = 'Connected — PNG ' + (base64.length * 0.75 / 1024).toFixed(0) + ' KB';
+            } else {
+                // Unknown format — show as raw size and log header bytes
+                const header = base64.substring(0, 20);
+                connectionStatus.textContent = 'Connected — unknown format (' + (base64.length * 0.75 / 1024).toFixed(0) + ' KB, header: ' + header + ')';
+                placeholder.textContent = 'Unknown image format received';
+                placeholder.style.display = 'block';
+                console.warn('Unknown screenshot format, base64 header:', header);
+            }
         }
 
         // ---- Send command, get screenshot back ----

@@ -8,6 +8,17 @@ const { app, BrowserWindow, ipcMain, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
+// File-based logger — avoids EPIPE crashes from log when
+// Electron's stdout pipe breaks (common on Linux when piped).
+const logFile = path.join(__dirname, 'Errors.txt');
+function log() {
+    const msg = Array.from(arguments).map(a =>
+        typeof a === 'object' ? JSON.stringify(a) : String(a)
+    ).join(' ');
+    const line = new Date().toISOString() + ' ' + msg + '\n';
+    fs.appendFileSync(logFile, line);
+}
+
 // --- GPU Auto-Detection ---
 // Tests available GPUs on startup, saves working config to avoid re-probing.
 // Linux: enumerates /dev/dri/renderD* nodes, tries each for best performance.
@@ -80,18 +91,18 @@ function configureGpu() {
     if (saved && saved.working) {
         if (saved.device) {
             app.commandLine.appendSwitch('gpu-device', saved.device);
-            console.log('GPU: Using saved config — device:', saved.device);
+            log('GPU: Using saved config — device:', saved.device);
         } else if (saved.disabled) {
             app.commandLine.appendSwitch('disable-gpu');
             app.commandLine.appendSwitch('disable-software-rasterizer');
-            console.log('GPU: Using saved config — software rendering');
+            log('GPU: Using saved config — software rendering');
         } else {
-            console.log('GPU: Using saved config — default hardware');
+            log('GPU: Using saved config — default hardware');
         }
 
         // Listen for GPU crash — if it crashes, fall back and re-save
         app.on('gpu-process-crashed', () => {
-            console.log('GPU: Saved config crashed, falling back to software rendering');
+            log('GPU: Saved config crashed, falling back to software rendering');
             app.commandLine.appendSwitch('disable-gpu');
             app.commandLine.appendSwitch('disable-software-rasterizer');
             saveGpuConfig({ working: true, disabled: true, device: null, platform, timestamp: Date.now() });
@@ -106,45 +117,45 @@ function configureGpu() {
             // Try the highest-numbered render node (typically discrete GPU)
             const device = renderNodes[0];
             app.commandLine.appendSwitch('gpu-device', device);
-            console.log('GPU: Found', renderNodes.length, 'render nodes, trying:', device);
+            log('GPU: Found', renderNodes.length, 'render nodes, trying:', device);
 
             // Mark for validation — if no crash within 5s, save as working
             setTimeout(() => {
-                console.log('GPU: No crash after 5s — saving config');
+                log('GPU: No crash after 5s — saving config');
                 saveGpuConfig({ working: true, disabled: false, device, platform, timestamp: Date.now() });
             }, 5000);
 
             app.on('gpu-process-crashed', () => {
-                console.log('GPU:', device, 'crashed — trying next node or falling back');
+                log('GPU:', device, 'crashed — trying next node or falling back');
                 saveGpuConfig({ working: true, disabled: true, device: null, platform, timestamp: Date.now() });
                 // Will use software rendering on next launch
             });
         } else {
-            console.log('GPU: No DRI render nodes found — using software rendering');
+            log('GPU: No DRI render nodes found — using software rendering');
             app.commandLine.appendSwitch('disable-gpu');
             app.commandLine.appendSwitch('disable-software-rasterizer');
             saveGpuConfig({ working: true, disabled: true, device: null, platform, timestamp: Date.now() });
         }
     } else if (platform === 'win32') {
         // Windows: try hardware GPU first (default Chromium behavior)
-        console.log('GPU: Windows detected — trying hardware acceleration');
+        log('GPU: Windows detected — trying hardware acceleration');
         // No flags needed — Chromium uses the best available GPU by default
 
         // If it crashes, fall back to software rendering
         setTimeout(() => {
-            console.log('GPU: No crash after 5s — saving config');
+            log('GPU: No crash after 5s — saving config');
             saveGpuConfig({ working: true, disabled: false, device: null, platform, timestamp: Date.now() });
         }, 5000);
 
         app.on('gpu-process-crashed', () => {
-            console.log('GPU: Hardware acceleration crashed — falling back to software');
+            log('GPU: Hardware acceleration crashed — falling back to software');
             app.commandLine.appendSwitch('disable-gpu');
             app.commandLine.appendSwitch('disable-software-rasterizer');
             saveGpuConfig({ working: true, disabled: true, device: null, platform, timestamp: Date.now() });
         });
     } else {
         // macOS or other — try hardware first
-        console.log('GPU: Unknown platform (' + platform + ') — trying hardware acceleration');
+        log('GPU: Unknown platform (' + platform + ') — trying hardware acceleration');
         setTimeout(() => {
             saveGpuConfig({ working: true, disabled: false, device: null, platform, timestamp: Date.now() });
         }, 5000);
@@ -173,6 +184,15 @@ const defaultBounds = { width: 1600, height: 900, x: 100, y: 0 };
 // Download state
 let downloadDirPath = path.join(app.getPath('home'), 'Documents', 'Onland', 'Downloads');
 let lastDownload = null;
+
+// Captured page API data for direct fetch (replaces screenshots)
+let capturedAuthToken = null;
+let capturedApiHeaders = {};
+let capturedRequestBody = null;
+let capturedPageApiUrl = null; // Full URL of last page API request
+
+// CDP-captured page images { pageNumber: { base64Data, contentType, size } }
+let cdpPageImages = {};
 
 function loadBounds() {
     try {
@@ -228,25 +248,153 @@ function createWindow() {
     mainWindow.on('move', saveBounds);
     mainWindow.on('close', saveBounds);
 
+    // Attach CDP debugger to webview to capture page image responses
+    // This works regardless of fetch/XHR/web workers — captures at the network layer
+    mainWindow.webContents.on('did-attach-webview', (event, guestWebContents) => {
+        try {
+            guestWebContents.debugger.attach('1.3');
+        } catch (e) {
+            log('CDP: Debugger already attached or failed:', e.message);
+            return;
+        }
+
+        // Enable Network with large buffer for response bodies
+        guestWebContents.debugger.sendCommand('Network.enable', {
+            maxTotalBufferSize: 100 * 1024 * 1024  // 100MB
+        }).catch(() => {});
+
+        // Also enable Fetch domain to intercept responses
+        guestWebContents.debugger.sendCommand('Fetch.enable', {
+            patterns: [{
+                urlPattern: '*://www.onland.ca/api/v1/books/transactions/*/pages*',
+                requestStage: 'Response'
+            }]
+        }).catch(() => {});
+
+        guestWebContents.debugger.on('message', (_event, method, params) => {
+            if (method === 'Fetch.requestPaused') {
+                const pausedUrl = (params.request && params.request.url) || '';
+                if (pausedUrl.includes('/transactions/') && pausedUrl.includes('/pages?page=')) {
+                    const pageMatch = pausedUrl.match(/page=(\d+)/);
+                    const pageNum = pageMatch ? parseInt(pageMatch[1], 10) : null;
+                    const requestId = params.requestId;
+
+                    if (!pageNum) {
+                        guestWebContents.debugger.sendCommand('Fetch.continueResponse', { requestId }).catch(() => {});
+                        return;
+                    }
+
+                    // Get the response body from the paused request
+                    guestWebContents.debugger.sendCommand('Fetch.getResponseBody', { requestId })
+                        .then(result => {
+                            if (result && result.body) {
+                                const contentType = (result.base64Encoded ? 'application/octet-stream' :
+                                    (params.responseHeaders && (params.responseHeaders['content-type'] || params.responseHeaders['Content-Type'])) || '');
+                                let base64Data;
+
+                                if (result.base64Encoded) {
+                                    base64Data = result.body;
+                                } else {
+                                    // Text response — check for JSON with content field
+                                    try {
+                                        const json = JSON.parse(result.body);
+                                        base64Data = json.content || Buffer.from(result.body).toString('base64');
+                                    } catch (e) {
+                                        base64Data = Buffer.from(result.body).toString('base64');
+                                    }
+                                }
+
+                                if (base64Data) {
+                                    cdpPageImages[pageNum] = {
+                                        base64Data,
+                                        contentType,
+                                        size: base64Data.length
+                                    };
+                                    log('FETCH CDP: Captured page', pageNum, '(', base64Data.length, 'chars)');
+                                }
+                            }
+                            // Continue the request so the webview receives the response
+                            // Must pass through original response headers to avoid breaking page rendering
+                            const fulfillParams = {
+                                requestId,
+                                responseCode: params.responseStatusCode || 200,
+                                body: result.body,
+                                base64Encoded: result.base64Encoded || false
+                            };
+                            // Pass through original response headers if available
+                            if (params.responseHeaders && Object.keys(params.responseHeaders).length > 0) {
+                                fulfillParams.responseHeaders = Object.entries(params.responseHeaders).map(([name, value]) => ({
+                                    name, value: Array.isArray(value) ? value.join(', ') : String(value)
+                                }));
+                            }
+                            guestWebContents.debugger.sendCommand('Fetch.fulfillResponse', fulfillParams).catch(() => {
+                                // If fulfillResponse fails, try continueResponse
+                                guestWebContents.debugger.sendCommand('Fetch.continueResponse', { requestId }).catch(() => {});
+                            });
+                        })
+                        .catch(err => {
+                            log('FETCH CDP: getResponseBody failed for page', pageNum, err.message);
+                            guestWebContents.debugger.sendCommand('Fetch.continueResponse', { requestId }).catch(() => {});
+                        });
+                } else {
+                    guestWebContents.debugger.sendCommand('Fetch.continueResponse', { requestId }).catch(() => {});
+                }
+            }
+        });
+
+        log('CDP: Network + Fetch debugger attached to webview');
+    });
+
     return mainWindow;
 }
 
 // App lifecycle events
 app.whenReady().then(() => {
-    console.log('Electron ready, creating window...');
+    log('Electron ready, creating window...');
     createWindow();
-    console.log('Window created, webview will load onland.ca directly');
+    log('Window created, webview will load onland.ca directly');
 
     // Set up download interception on the webview's session partition
     const ses = session.fromPartition('persist:onland');
 
-    // Intercept network requests to capture Onland page API URL pattern
+    // Capture request headers from Onland page API requests
+    // Stores auth token + custom headers for direct API fetch (replaces screenshots)
+    ses.webRequest.onBeforeSendHeaders(
+        { urls: ['*://www.onland.ca/api/v1/books/transactions/*/pages*'] },
+        (details, callback) => {
+            const headers = details.requestHeaders || {};
+            const auth = headers['authorization'] || headers['Authorization'] || '';
+            if (auth) {
+                capturedAuthToken = auth;
+                // Capture Onland-specific headers for API replay
+                capturedApiHeaders = {};
+                if (headers['onland-random']) capturedApiHeaders['onland-random'] = headers['onland-random'];
+                if (headers['tracer']) capturedApiHeaders['tracer'] = headers['tracer'];
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    try {
+                        mainWindow.webContents.send('onland:authToken', { token: auth });
+                        log('ONLAND AUTH TOKEN CAPTURED');
+                    } catch(e) {}
+                }
+            }
+            callback({ requestHeaders: details.requestHeaders });
+        }
+    );
+
+    // Intercept network requests to capture Onland page API URL pattern + body
     // Onland loads book pages via: POST https://www.onland.ca/api/v1/books/transactions/{id}/pages?page=N
     // We only observe — the callback must pass the request through unchanged
     ses.webRequest.onBeforeRequest(
         { urls: ['*://www.onland.ca/api/v1/books/transactions/*/pages*'] },
         (details, callback) => {
-            try { console.log('ONLAND PAGE API:', details.url, details.method); } catch(e) {}
+            log('ONLAND PAGE API:', details.url, details.method);
+            // Store URL for direct fetch (main process builds URLs from this)
+            capturedPageApiUrl = details.url;
+            // Capture request body for replay
+            if (details.uploadData && details.uploadData.length > 0) {
+                capturedRequestBody = details.uploadData[0].bytes.toString();
+                log('ONLAND REQUEST BODY:', capturedRequestBody);
+            }
             // Forward the captured URL to the renderer so it knows the API pattern
             if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send('onland:pageApiUrl', {
@@ -272,7 +420,7 @@ app.whenReady().then(() => {
         item.on('updated', (e, state) => {
             if (state === 'completed') {
                 lastDownload = { filename, path: savePath };
-                try { console.log('Download complete:', savePath); } catch(e) {}
+                log('Download complete:', savePath);
                 if (mainWindow && !mainWindow.isDestroyed()) {
                     mainWindow.webContents.send('download:complete', { filename, path: savePath });
                 }
@@ -284,9 +432,9 @@ app.whenReady().then(() => {
     try {
         const server = require('./server.js');
         server.startServer(restPort, mainWindow);
-        console.log('REST API server started on port ' + restPort);
+        log('REST API server started on port ' + restPort);
     } catch (err) {
-        console.error('Failed to start REST API server:', err.message);
+        log('Failed to start REST API server:', err.message);
     }
 });
 
@@ -367,6 +515,17 @@ ipcMain.handle('state:update', (event, state) => {
     return { success: true };
 });
 
+// IPC handler: push activity log to REST API for remote viewing
+ipcMain.handle('log:push', (event, logEntry) => {
+    try {
+        const server = require('./server.js');
+        server.pushLog(logEntry);
+    } catch (e) {
+        // Server may not be running
+    }
+    return { success: true };
+});
+
 // IPC handler: screenshot push from renderer to REST API
 ipcMain.handle('screenshot:update', (event, base64Data) => {
     try {
@@ -376,6 +535,83 @@ ipcMain.handle('screenshot:update', (event, base64Data) => {
         // Server may not be running
     }
     return { success: true };
+});
+
+// IPC handler: fetch page image — uses CDP-captured data from webview responses
+// Falls back to direct API fetch if CDP data not available
+ipcMain.handle('page:fetch', async (event, { pageNumber }) => {
+    // Try 1: Return CDP-captured page image
+    log('PAGE FETCH: CDP cache has pages:', Object.keys(cdpPageImages).join(','), 'looking for:', pageNumber, typeof pageNumber);
+    const cdpImage = cdpPageImages[pageNumber];
+    if (cdpImage && cdpImage.base64Data) {
+        log('PAGE FETCH: Returning CDP-captured page', pageNumber, '(', cdpImage.size, 'chars)');
+        // Push to REST API for secondary display
+        try {
+            const server = require('./server.js');
+            server.updateScreenshot(cdpImage.base64Data);
+        } catch (e) {}
+        return { success: true, data: cdpImage.base64Data, contentType: cdpImage.contentType, size: cdpImage.size, source: 'cdp' };
+    }
+
+    // Try 2: Direct API fetch (may fail due to encrypted request body)
+    if (!capturedAuthToken || !capturedPageApiUrl) {
+        return { success: false, message: 'No auth token or URL captured yet — search for a book first' };
+    }
+
+    const url = capturedPageApiUrl.replace(/page=\d+/, `page=${pageNumber}`);
+    log('PAGE FETCH: Direct API', url);
+
+    try {
+        const { net } = require('electron');
+        const request = net.request({
+            url,
+            partition: 'persist:onland',
+            method: 'POST'
+        });
+
+        request.setHeader('Authorization', capturedAuthToken);
+        request.setHeader('Content-Type', 'application/json');
+        Object.entries(capturedApiHeaders).forEach(([key, value]) => {
+            request.setHeader(key, value);
+        });
+        if (capturedRequestBody) {
+            request.write(capturedRequestBody);
+        }
+
+        return new Promise((resolve) => {
+            const chunks = [];
+            request.on('response', (response) => {
+                const contentType = response.headers['content-type'] || '';
+                log('PAGE FETCH response:', response.statusCode, contentType);
+
+                if (response.statusCode !== 200) {
+                    let body = '';
+                    response.on('data', (chunk) => { body += chunk.toString(); });
+                    response.on('end', () => {
+                        resolve({ success: false, message: `HTTP ${response.statusCode}`, body: body.substring(0, 200) });
+                    });
+                    return;
+                }
+
+                response.on('data', (chunk) => chunks.push(chunk));
+                response.on('end', () => {
+                    const buffer = Buffer.concat(chunks);
+                    try {
+                        const server = require('./server.js');
+                        server.updateScreenshot(buffer.toString('base64'));
+                    } catch (e) {}
+                    resolve({ success: true, data: buffer.toString('base64'), contentType, size: buffer.length, source: 'api' });
+                });
+            });
+            request.on('error', (error) => {
+                log('PAGE FETCH error:', error.message);
+                resolve({ success: false, message: error.message });
+            });
+            request.end();
+        });
+    } catch (error) {
+        return { success: false, message: error.message };
+    }
 });
 
 // IPC handler for webview screenshot requests (legacy - kept as fallback)
