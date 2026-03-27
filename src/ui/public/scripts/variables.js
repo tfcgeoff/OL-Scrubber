@@ -13,12 +13,11 @@ export const PAGE_COUNT_MAX_POLLS = 30;
 export const PAGE_COUNT_POLL_INTERVAL = 500;
 
 // Search timing
-export const SEARCH_ANGULAR_WAIT = 3000;
-export const SEARCH_RESULTS_WAIT = 3000;
-export const SEARCH_VIEW_DETAILS_WAIT = 1500;
+export const SEARCH_FORM_MAX_POLLS = 60;
+export const SEARCH_FORM_POLL_INTERVAL = 500;
 
-// Form filler timing
-export const FORM_DROPDOWN_WAIT = 500;
+// Form filler timing (unused - navigating directly to URL now)
+// export const FORM_DROPDOWN_WAIT = 500;
 
 // UI timing
 export const STATUS_MESSAGE_DURATION = 5000;

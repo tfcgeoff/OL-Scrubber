@@ -5,13 +5,12 @@
 import { addLog } from './logger.js';
 import { showStatus } from './ui.js';
 import { getWebview } from './webview-manager.js';
-import { generateFormFillScript } from './form-filler.js';
+// import { generateFormFillScript } from './form-filler.js';
 import { pollForPageCount } from './page-navigator.js';
 import { captureScreenshot } from './screenshot.js';
 import {
-    SEARCH_ANGULAR_WAIT,
-    SEARCH_RESULTS_WAIT,
-    SEARCH_VIEW_DETAILS_WAIT
+    SEARCH_FORM_MAX_POLLS,
+    SEARCH_FORM_POLL_INTERVAL
 } from './variables.js';
 
 /**
@@ -65,102 +64,164 @@ export function setupSearchHandler(searchForm) {
 async function executeSearch(lro, descType, descNumber) {
     const webview = getWebview();
 
-    addLog('info', 'Navigating to search page', { lro, descType, descNumber });
+    // Navigate directly to search results URL
+    const searchUrl = `https://www.onland.ca/ui/${lro}/books/search/1?lcv1=${encodeURIComponent(descNumber)}&lct1=${encodeURIComponent(descType)}&page=1`;
 
-    // Navigate directly to the LRO-specific search page
-    const searchUrl = `https://www.onland.ca/ui/${lro}/books/search`;
+    addLog('info', 'Navigating to search results', { url: searchUrl });
     webview.src = searchUrl;
+    showStatus('Loading search results...', 'info');
 
-    addLog('info', 'Waiting for page load...');
-
-    // Wait for navigation and then fill in the form
-    await waitForFormFill(webview, descType, descNumber);
-}
-
-/**
- * Wait for form to load and fill it
- * @param {HTMLElement} webview - The webview element
- * @param {string} descType - The description type
- * @param {string} descNumber - The description number
- * @returns {Promise} Promise that resolves when form is filled
- */
-function waitForFormFill(webview, descType, descNumber) {
-    return new Promise((resolve) => {
-        webview.addEventListener('dom-ready', function fillForm() {
-            addLog('success', 'Search page loaded');
-
-            // Wait for Angular to render (add delay)
-            setTimeout(() => {
-                addLog('info', 'Waiting for Angular to render form...');
-
-                const fullScript = generateFormFillScript(descType, descNumber);
-
-                webview.executeJavaScript(fullScript).then(result => {
-                    addLog('info', 'Execution complete', result.log);
-                    if (result.success) {
-                        addLog('success', 'Search submitted!');
-                        showStatus('Search submitted successfully', 'success');
-
-                        // Wait for results page and look for "View Details" buttons
-                        setTimeout(() => {
-                            waitForViewDetails(webview);
-                        }, SEARCH_RESULTS_WAIT);
-                    } else {
-                        addLog('warning', 'Search may not have completed');
-                        showStatus('May not have completed search', 'warning');
-                        resolve();
-                    }
-                }).catch(err => {
-                    addLog('error', 'Execution failed: ' + err.message);
-                    console.error('Error:', err);
-                    resolve();
-                });
-            }, SEARCH_ANGULAR_WAIT); // Wait for Angular to render
-
-            // Remove this listener after first use
-            webview.removeEventListener('dom-ready', fillForm);
+    await new Promise((resolve) => {
+        webview.addEventListener('dom-ready', function onReady() {
+            webview.removeEventListener('dom-ready', onReady);
+            resolve();
         });
     });
+
+    addLog('info', 'Page loaded - polling for results...');
+    waitForResults(webview);
 }
 
 /**
- * Wait for and click View Details button
- * @param {HTMLElement} webview - The webview element
- * @returns {Promise} Promise that resolves when View Details is clicked
+ * Poll for form elements, fill the form, and click search
+ * NOTE: Currently unused - using direct URL navigation instead
  */
-function waitForViewDetails(webview) {
-    webview.executeJavaScript(`
-        (() => {
-            const log = [];
+// function fillFormAndSearch(webview, descType, descNumber) {
+//     let polls = 0;
+//     const poll = () => {
+//         webview.executeJavaScript(`document.getElementById('lct1') !== null`).then(found => {
+//             if (found) {
+//                 addLog('success', 'Form ready - filling fields...');
+//                 executeFormFill(webview, descType, descNumber);
+//             } else if (polls < SEARCH_FORM_MAX_POLLS) {
+//                 polls++;
+//                 setTimeout(poll, SEARCH_FORM_POLL_INTERVAL);
+//             } else {
+//                 addLog('error', 'Form element lct1 not found after 30 seconds');
+//                 showStatus('Form failed to load', 'error');
+//             }
+//         });
+//     };
+//     poll();
+// }
 
-            // Look for View Details buttons
-            const viewBtns = document.querySelectorAll('button[aria-label*="View Details"]');
-            log.push({ step: 'found view buttons', count: viewBtns.length });
+/**
+ * Execute the form fill script in the webview
+ * NOTE: Currently unused - using direct URL navigation instead
+ */
+// function executeFormFill(webview, descType, descNumber) {
+//     const script = `
+//         (() => {
+//             const descType = ${JSON.stringify(descType)};
+//             const descNumber = ${JSON.stringify(descNumber)};
+//             const log = [];
+//             const typeSelect = document.getElementById('lct1');
+//             if (!typeSelect) { log.push({ step: 'error', message: 'lct1 not found' }); return { success: false, log }; }
+//             let matched = false;
+//             for (let i = 0; i < typeSelect.options.length; i++) {
+//                 const opt = typeSelect.options[i];
+//                 if (opt.textContent.trim().toLowerCase() === descType.toLowerCase()) {
+//                     typeSelect.selectedIndex = i; typeSelect.value = opt.value; opt.selected = true;
+//                     matched = true; break;
+//                 }
+//             }
+//             typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+//             setTimeout(() => {
+//                 const numInput = document.getElementById('lcv1');
+//                 if (numInput && !numInput.disabled) {
+//                     numInput.value = descNumber;
+//                     numInput.dispatchEvent(new Event('input', { bubbles: true }));
+//                     numInput.dispatchEvent(new Event('change', { bubbles: true }));
+//                     const searchBtn = document.getElementById('searchButton');
+//                     if (searchBtn) searchBtn.click();
+//                 }
+//             }, 500);
+//             return { success: matched, log };
+//         })()
+//     `;
+//     webview.executeJavaScript(script).then(result => {
+//         if (result.success) { waitForViewDetails(webview); }
+//     });
+// }
 
-            if (viewBtns.length > 0) {
-                const firstBtn = viewBtns[0];
-                const ariaLabel = firstBtn.getAttribute('aria-label');
-                log.push({ step: 'clicking first button', ariaLabel: ariaLabel, html: firstBtn.outerHTML });
+/**
+ * Poll for search results (View Details, no results, or server error)
+ * @param {HTMLElement} webview - The webview element
+ * @param {number} retries - Number of server error retries so far
+ */
+function waitForResults(webview) {
+    let polls = 0;
+    const poll = () => {
+        webview.executeJavaScript(`
+            (() => {
+                const bodyText = document.body.innerText || '';
 
-                firstBtn.click();
-                log.push({ step: 'clicked view details', success: true });
+                if (bodyText.includes('The system is unable to perform this request')) {
+                    return { status: 'server-error' };
+                }
+                if (bodyText.includes('Your search did not match any books')) {
+                    return { status: 'no-results' };
+                }
 
-                return { found: true, clicked: true, log };
+                const viewBtns = document.querySelectorAll('button[aria-label*="View Details"]');
+                if (viewBtns.length > 0) {
+                    // Grab the results summary text (e.g. "Showing 1 to 2 of 2 result(s) for \"Plan 606\"")
+                    const summaryMatch = bodyText.match(/Showing \\d+ to \\d+ of \\d+ result/);
+                    return { status: 'found', count: viewBtns.length, summary: summaryMatch ? summaryMatch[0] : null };
+                }
+
+                return { status: 'loading' };
+            })()
+        `).then(result => {
+            if (result.status === 'found') {
+                addLog('success', 'Results found', { books: result.count, summary: result.summary });
+                webview.executeJavaScript(`
+                    (() => {
+                        const btn = document.querySelector('button[aria-label*="View Details"]');
+                        if (btn) { btn.click(); return { clicked: true }; }
+                        return { clicked: false };
+                    })()
+                `).then(clickResult => {
+                    if (clickResult.clicked) {
+                        addLog('success', 'View Details clicked');
+                        addLog('info', 'Waiting for book page to load...');
+
+                        // Wait for navigation to book page before polling for page count
+                        const waitForBookPage = () => {
+                            return new Promise((resolve) => {
+                                webview.addEventListener('dom-ready', function onReady() {
+                                    webview.removeEventListener('dom-ready', onReady);
+                                    resolve();
+                                });
+                            });
+                        };
+
+                        waitForBookPage().then(() => {
+                            addLog('info', 'Book page loaded - checking for page count...');
+                            pollForPageCount(webview, () => {
+                                takeAndDisplayScreenshot(webview);
+                            });
+                        });
+                    } else {
+                        addLog('error', 'View Details button disappeared before clicking');
+                    }
+                });
+            } else if (result.status === 'server-error') {
+                addLog('error', 'Server error: unable to perform request');
+                showStatus('Server error - try again later', 'error');
+            } else if (result.status === 'no-results') {
+                addLog('warning', 'No results found for search');
+                showStatus('No results found', 'warning');
+            } else if (polls < SEARCH_FORM_MAX_POLLS) {
+                polls++;
+                setTimeout(poll, SEARCH_FORM_POLL_INTERVAL);
+            } else {
+                addLog('error', 'Timed out waiting for search results');
+                showStatus('Timed out waiting for results', 'error');
             }
-
-            log.push({ step: 'no view buttons found' });
-            return { found: false, clicked: false, log };
-        })()
-    `).then(viewResult => {
-        addLog('info', 'View Details click result', viewResult.log);
-
-        // Start polling for page count after book loads
-        setTimeout(() => {
-            pollForPageCount(webview, () => {
-                takeAndDisplayScreenshot(webview);
-            });
-        }, SEARCH_VIEW_DETAILS_WAIT);
-    }).catch(err => {
-        addLog('error', 'View Details execution failed: ' + err.message);
-    });
+        }).catch(err => {
+            addLog('error', 'Results poll failed: ' + err.message);
+        });
+    };
+    poll();
 }

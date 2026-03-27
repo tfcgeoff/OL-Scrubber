@@ -1,12 +1,13 @@
 /**
  * Form Filler Module - Fills in the search form on the Onland website
+ * NOTE: Currently unused - search-handler.js now navigates directly to the search URL
  */
 
-import { FORM_DROPDOWN_WAIT } from './variables.js';
+// import { FORM_DROPDOWN_WAIT } from './variables.js';
 
 /**
  * Generate the JavaScript code to fill the search form
- * @param {string} descType - The description type
+ * @param {string} descType - The description type (e.g. "Plan")
  * @param {string} descNumber - The description number
  * @returns {string} The JavaScript code to execute
  */
@@ -17,142 +18,67 @@ export function generateFormFillScript(descType, descNumber) {
             const descNumber = ${JSON.stringify(descNumber)};
             const log = [];
 
-            // Check what we can see
-            log.push({ step: 'page-check', title: document.title, url: window.location.href });
+            // === Step 1: Select the description type from <select id="lct1"> ===
+            const typeSelect = document.getElementById('lct1');
+            if (typeSelect) {
+                log.push({ step: 'found-type-select', id: 'lct1', tag: typeSelect.tagName });
 
-            // Check if Angular has loaded
-            const angularApp = document.querySelector('[ng-version]');
-            log.push({ step: 'angular-check', hasAngular: !!angularApp });
-
-            // Page analysis
-            const inputs = document.querySelectorAll('input');
-            const buttons = Array.from(document.querySelectorAll('button'));
-            log.push({ step: 'analysis', inputCount: inputs.length, buttonCount: buttons.length });
-
-            // If no inputs, the form hasn't loaded yet
-            if (inputs.length === 0) {
-                log.push({ step: 'error', message: 'No inputs found - form may not be loaded yet' });
-                return { success: false, log };
-            }
-
-            // === Step 1: Log all inputs with full details ===
-            log.push({ step: 'input-analysis', totalInputs: inputs.length });
-            inputs.forEach((inp, i) => {
-                log.push({
-                    step: 'input-details',
-                    index: i,
-                    placeholder: inp.placeholder || '(none)',
-                    ariaLabel: inp.getAttribute('aria-label') || inp.getAttribute('aria-labelledby') || '(none)',
-                    type: inp.type || '(unknown)',
-                    id: inp.id || '(none)',
-                    name: inp.name || '(none)',
-                    value: inp.value || '(empty)'
-                });
-            });
-
-            // === Step 2: Find inputs by their purpose ===
-            let typeInput = null;
-            let numInput = null;
-
-            // First try: Find by aria-label or placeholder content
-            for (let i = 0; i < inputs.length; i++) {
-                const inp = inputs[i];
-                const ariaLabel = (inp.getAttribute('aria-label') || inp.getAttribute('aria-labelledby') || '').toLowerCase();
-                const placeholder = (inp.placeholder || '').toLowerCase();
-
-                // Look for Description Type input (triggers dropdown)
-                if (!typeInput) {
-                    if (ariaLabel.includes('description') && (ariaLabel.includes('type') || placeholder.includes('type'))) {
-                        typeInput = inp;
-                        log.push({ step: 'found-type-by-label', index: i, ariaLabel, placeholder });
-                    } else if (placeholder.includes('description') && placeholder.includes('type')) {
-                        typeInput = inp;
-                        log.push({ step: 'found-type-by-placeholder', index: i, placeholder });
+                // Find the option matching descType and select it
+                let matched = false;
+                for (let i = 0; i < typeSelect.options.length; i++) {
+                    const opt = typeSelect.options[i];
+                    if (opt.textContent.trim().toLowerCase() === descType.toLowerCase() ||
+                        opt.getAttribute('aria-label')?.toLowerCase() === descType.toLowerCase()) {
+                        typeSelect.selectedIndex = i;
+                        typeSelect.value = opt.value;
+                        opt.selected = true;
+                        log.push({ step: 'selected-type', value: opt.value, text: opt.textContent.trim() });
+                        matched = true;
+                        break;
                     }
                 }
 
-                // Look for Property Description Number input
-                if (!numInput) {
-                    const hasDesc = ariaLabel.includes('description') || placeholder.includes('description');
-                    const hasNum = ariaLabel.includes('number') || placeholder.includes('number');
-                    const hasOther = ariaLabel.includes('other') || placeholder.includes('other');
-
-                    if (hasDesc && hasNum && !hasOther) {
-                        numInput = inp;
-                        log.push({ step: 'found-number-by-label', index: i, ariaLabel, placeholder });
-                    }
+                if (!matched) {
+                    log.push({ step: 'warning', message: 'No option matching "' + descType + '"', availableOptions: Array.from(typeSelect.options).map(o => o.textContent.trim()) });
                 }
+
+                typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            } else {
+                // Element not found - log what IS on the page for debugging
+                const allIds = Array.from(document.querySelectorAll('[id]')).map(e => e.id).slice(0, 30);
+                const selectCount = document.querySelectorAll('select').length;
+                const inputCount = document.querySelectorAll('input').length;
+                log.push({ step: 'error', message: 'lct1 not found', allIds, selectCount, inputCount });
             }
 
-            // === Step 3: Fallback to positional logic if not found ===
-            if (!typeInput && inputs.length >= 1) {
-                typeInput = inputs[0];
-                log.push({ step: 'type-input-fallback', index: 0, reason: 'first-input' });
-            }
+            // === Step 2: Fill Description Number (id: lcv1) ===
+            // This input is disabled until a type is selected, so wait briefly
+            setTimeout(() => {
+                const numInput = document.getElementById('lcv1');
+                if (numInput) {
+                    const wasDisabled = numInput.disabled;
+                    log.push({ step: 'found-number', id: 'lcv1', wasDisabled: wasDisabled });
+                    if (!wasDisabled) {
+                        numInput.value = descNumber;
+                        numInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        numInput.dispatchEvent(new Event('change', { bubbles: true }));
+                        log.push({ step: 'filled-number', value: descNumber });
 
-            if (!numInput && inputs.length >= 2) {
-                // Check if second input looks like "other" field
-                const secondInput = inputs[1];
-                const ariaLabel = (secondInput.getAttribute('aria-label') || secondInput.getAttribute('aria-labelledby') || '').toLowerCase();
-                const placeholder = (secondInput.placeholder || '').toLowerCase();
-                const isOtherField = ariaLabel.includes('other') || placeholder.includes('other');
-
-                if (isOtherField && inputs.length >= 3) {
-                    numInput = inputs[2];
-                    log.push({ step: 'number-input-fallback', index: 2, reason: 'third-input-skipped-other' });
-                } else {
-                    numInput = inputs[1];
-                    log.push({ step: 'number-input-fallback', index: 1, reason: 'second-input' });
-                }
-            }
-
-            // === Step 4: Fill Description Type and handle dropdown ===
-            if (typeInput) {
-                log.push({ step: 'filling-type', inputIndex: Array.from(inputs).indexOf(typeInput), value: descType });
-                typeInput.click();
-                typeInput.focus();
-                typeInput.value = descType;
-                typeInput.dispatchEvent(new Event('input', { bubbles: true }));
-                typeInput.dispatchEvent(new Event('change', { bubbles: true }));
-
-                // Wait for dropdown to appear and select an option
-                setTimeout(() => {
-                    const options = document.querySelectorAll('mat-option');
-                    log.push({ step: 'dropdown-check', optionCount: options.length });
-
-                    if (options.length > 0) {
-                        // Click the first option (Abstract/Parcel Register Book)
-                        options[0].click();
-                        log.push({ step: 'selected-option', optionText: options[0].textContent.trim().substring(0, 50) });
+                        // === Step 3: Click search button ===
+                        const searchBtn = document.getElementById('searchButton');
+                        if (searchBtn) {
+                            searchBtn.click();
+                            log.push({ step: 'clicked search', success: true });
+                        } else {
+                            log.push({ step: 'error', message: 'searchButton not found' });
+                        }
                     } else {
-                        log.push({ step: 'warning', message: 'No mat-option elements found for dropdown' });
+                        log.push({ step: 'error', message: 'lcv1 is still disabled - type selection may have failed' });
                     }
-                }, ${FORM_DROPDOWN_WAIT});
-            } else {
-                log.push({ step: 'error', message: 'Could not find Description Type input' });
-            }
-
-            // === Step 5: Fill Description Number ===
-            if (numInput) {
-                log.push({ step: 'filling-number', inputIndex: Array.from(inputs).indexOf(numInput), value: descNumber });
-                numInput.click();
-                numInput.focus();
-                numInput.value = descNumber;
-                numInput.dispatchEvent(new Event('input', { bubbles: true }));
-                numInput.dispatchEvent(new Event('change', { bubbles: true }));
-            } else {
-                log.push({ step: 'error', message: 'Could not find Description Number input' });
-            }
-
-            // Find search button by ID (more reliable)
-            const searchBtn = document.getElementById('searchButton');
-            if (searchBtn) {
-                log.push({ step: 'found search button', id: 'searchButton' });
-                searchBtn.click();
-                log.push({ step: 'clicked search', success: true });
-            } else {
-                log.push({ step: 'error', message: 'searchButton not found by ID' });
-            }
+                } else {
+                    log.push({ step: 'error', message: 'lcv1 not found' });
+                }
+            }, ${FORM_DROPDOWN_WAIT});
 
             return { success: true, log };
         })()

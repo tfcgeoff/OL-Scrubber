@@ -40,7 +40,7 @@ export function pollForPageCount(webview, onScreenshotReady) {
                 }
 
                 const totalPages = parseInt(match[1], 10);
-                const middlePage = Math.floor(totalPages / 2);
+                const middlePage = Math.max(1, Math.floor(totalPages / 2));
 
                 return {
                     found: true,
@@ -51,23 +51,20 @@ export function pollForPageCount(webview, onScreenshotReady) {
             })()
         `).then(pageResult => {
             if (pageResult.found) {
-                addLog('success', 'Page count loaded - navigating to middle page', {
+                addLog('success', 'Page count loaded', {
                     totalPages: pageResult.totalPages,
-                    middlePage: pageResult.middlePage,
-                    originalText: pageResult.text
+                    middlePage: pageResult.middlePage
                 });
 
-                // Navigate to middle page
+                // Navigate to middle page via the page input box
                 return navigateToMiddlePage(webview, pageResult.middlePage).then(() => {
                     onScreenshotReady();
                 });
             } else if (pollCount < maxPolls) {
-                // Poll again after 500ms
                 return new Promise(resolve => {
                     setTimeout(() => resolve(poll(pollCount + 1)), PAGE_COUNT_POLL_INTERVAL);
                 });
             } else {
-                // Max polls reached - take screenshot anyway
                 addLog('error', 'Page count not found after 15 seconds - taking screenshot anyway');
                 onScreenshotReady();
                 return Promise.resolve();
@@ -79,7 +76,7 @@ export function pollForPageCount(webview, onScreenshotReady) {
 }
 
 /**
- * Navigate to a specific page in the book viewer
+ * Navigate to a specific page using the "Jump to Page" input box
  * @param {HTMLElement} webview - The webview element
  * @param {number} pageNumber - The page number to navigate to
  * @returns {Promise} Promise that resolves when navigation is complete
@@ -87,29 +84,41 @@ export function pollForPageCount(webview, onScreenshotReady) {
 function navigateToMiddlePage(webview, pageNumber) {
     return webview.executeJavaScript(`
         (() => {
-            const currentUrl = window.location.href;
             const middlePage = ${pageNumber};
 
-            const urlObj = new URL(currentUrl);
-            urlObj.searchParams.set('page', middlePage);
+            // Find the "Jump to Page" input
+            const pageInput = document.querySelector('input[aria-label="Jump to Page"]');
+            if (!pageInput) {
+                return { success: false, message: 'Jump to Page input not found' };
+            }
 
-            window.location.href = urlObj.href;
+            // Set the value and dispatch events for Angular
+            pageInput.value = middlePage;
+            pageInput.dispatchEvent(new Event('input', { bubbles: true }));
+            pageInput.dispatchEvent(new Event('change', { bubbles: true }));
 
-            return {
-                navigated: true,
-                middlePage: middlePage,
-                newUrl: urlObj.href,
-                oldUrl: currentUrl
-            };
+            // Press Enter to trigger navigation
+            const enterEvent = new KeyboardEvent('keydown', {
+                key: 'Enter',
+                code: 'Enter',
+                keyCode: 13,
+                bubbles: true
+            });
+            pageInput.dispatchEvent(enterEvent);
+
+            return { success: true, middlePage: middlePage };
         })()
     `).then(navResult => {
-        addLog('info', 'Navigated to middle page', {
-            middlePage: navResult.middlePage,
-            newUrl: navResult.newUrl
-        });
+        if (navResult.success) {
+            addLog('info', 'Navigated to middle page via input', {
+                middlePage: navResult.middlePage
+            });
+        } else {
+            addLog('error', 'Page navigation failed: ' + navResult.message);
+        }
         return navResult;
     }).catch(navErr => {
-        addLog('error', 'Navigation failed: ' + navErr.message);
+        addLog('error', 'Page navigation failed: ' + navErr.message);
         return null;
     });
 }
