@@ -28,7 +28,13 @@ export function initLogger(logsElem, clearBtn) {
  * @param {string|null} screenshot - Optional base64 screenshot data
  */
 export function addLog(level, message, data = null, screenshot = null) {
-    console.log(`[${level.toUpperCase()}]`, message, data || '');
+    // Capture caller info for file/line number
+    const stack = new Error().stack;
+    const callerLine = stack ? stack.split('\n')[2] : '';
+    const match = callerLine.match(/(?:https?:\/\/[^/]+)?(.+):(\d+):\d+/);
+    const source = match ? `${match[1]}:${match[2]}` : '';
+
+    console.log(`[${level.toUpperCase()}]`, source, message, data || '');
 
     const entry = document.createElement('div');
     entry.className = `log-entry ${level}`;
@@ -37,6 +43,16 @@ export function addLog(level, message, data = null, screenshot = null) {
     const time = document.createElement('span');
     time.className = 'log-timestamp';
     time.textContent = `[${new Date().toLocaleTimeString()}] `;
+
+    // Source (file:line)
+    if (source) {
+        const src = document.createElement('span');
+        src.className = 'log-source';
+        src.textContent = `[${source}] `;
+        src.style.color = '#888';
+        src.style.fontSize = '11px';
+        entry.appendChild(src);
+    }
 
     // Message
     const msg = document.createElement('span');

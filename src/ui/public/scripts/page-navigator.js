@@ -5,6 +5,7 @@
 import { addLog } from './logger.js';
 import { PAGE_COUNT_MAX_POLLS, PAGE_COUNT_POLL_INTERVAL } from './variables.js';
 import { setState, getState } from './variables.js';
+import { setNavigationVisible, executeNavCommand } from './navigation-handler.js';
 
 /**
  * Poll for page count element and navigate to middle page
@@ -59,18 +60,24 @@ export function pollForPageCount(webview, onScreenshotReady) {
 
             if (pageResult.found) {
                 setState('totalPages', pageResult.totalPages);
-                setState('currentPage', pageResult.targetPage);
+                setState('currentPage', 1); // book viewer starts at page 1
 
                 addLog('success', 'Book page count detected', {
                     totalPages: pageResult.totalPages,
-                    targetPage: pageResult.targetPage,
                     totalBooks: getState('totalBooks'),
                     currentBook: getState('currentBook')
                 });
 
-                return navigateToPage(webview, pageResult.targetPage).then(() => {
-                    onScreenshotReady();
-                });
+                setNavigationVisible(true);
+
+                // Navigate to 50% using the same code path as manual commands
+                executeNavCommand('50%');
+
+                // // Old: direct navigation and screenshot
+                // setState('currentPage', pageResult.targetPage);
+                // return navigateToPage(webview, pageResult.targetPage).then(() => {
+                //     onScreenshotReady();
+                // });
             } else if (pollCount < maxPolls) {
                 return new Promise(resolve => {
                     setTimeout(() => resolve(poll(pollCount + 1)), PAGE_COUNT_POLL_INTERVAL);
@@ -94,40 +101,45 @@ export function pollForPageCount(webview, onScreenshotReady) {
  */
 export function navigateToPage(webview, pageNumber) {
     return webview.executeJavaScript(`
-        new Promise(resolve => {
-            setTimeout(() => {
-                const pageInput = document.querySelector('input[aria-label="Jump to Page"]');
-                if (!pageInput) {
-                    resolve({ success: false, message: 'Jump to Page input not found' });
-                    return;
-                }
+        (() => {
+            const pageInput = document.querySelector('input[aria-label="Jump to Page"]');
+            if (!pageInput) {
+                return { success: false, message: 'Jump to Page input not found' };
+            }
 
-                pageInput.value = ${pageNumber};
-                pageInput.dispatchEvent(new Event('input', { bubbles: true }));
-                pageInput.dispatchEvent(new Event('change', { bubbles: true }));
+            pageInput.value = ${pageNumber};
+            pageInput.dispatchEvent(new Event('input', { bubbles: true }));
+            pageInput.dispatchEvent(new Event('change', { bubbles: true }));
 
-                // Press Enter to trigger navigation
-                const enterEvent = new KeyboardEvent('keydown', {
-                    key: 'Enter',
-                    code: 'Enter',
-                    keyCode: 13,
-                    bubbles: true
-                });
-                pageInput.dispatchEvent(enterEvent);
+            // Press Enter to trigger navigation
+            const enterEvent = new KeyboardEvent('keydown', {
+                key: 'Enter',
+                code: 'Enter',
+                keyCode: 13,
+                bubbles: true
+            });
+            pageInput.dispatchEvent(enterEvent);
 
-                // // Focus page-count div to trigger onChange
-                // const pageCountDiv = document.querySelector('.page-count');
-                // if (pageCountDiv) {
-                //     pageCountDiv.focus();
-                // }
+            // // new Promise wrapper with setTimeout - Electron executeJavaScript
+            // // does not properly await nested Promises, causing undefined results
+            // new Promise(resolve => {
+            //     setTimeout(() => {
+            //         resolve({ success: true, pageNumber: ${pageNumber} });
+            //     }, 50);
+            // })
 
-                // // setTimeout(() => {
-                // //     pageInput.blur();
-                // }, 200);
+            // // Focus page-count div to trigger onChange
+            // const pageCountDiv = document.querySelector('.page-count');
+            // if (pageCountDiv) {
+            //     pageCountDiv.focus();
+            // }
 
-                resolve({ success: true, pageNumber: ${pageNumber} });
-            }, 50);
-        })
+            // // setTimeout(() => {
+            // //     pageInput.blur();
+            // }, 200);
+
+            return { success: true, pageNumber: ${pageNumber} };
+        })()
     `).then(navResult => {
         if (navResult.success) {
             addLog('info', 'Navigated to page', {
@@ -139,7 +151,8 @@ export function navigateToPage(webview, pageNumber) {
         }
         return navResult;
     }).catch(navErr => {
-        addLog('error', 'Page navigation failed: ' + navErr.message);
+        const errMsg = navErr instanceof Error ? navErr.message : String(navErr);
+        addLog('error', 'Page navigation failed: ' + errMsg);
         return null;
     });
 }

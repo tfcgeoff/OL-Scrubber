@@ -39,6 +39,10 @@
                     </div>
                 </div>
                 <button type="submit">Search Books</button>
+                <span id="navControls" class="hidden" style="margin-left: auto;">
+                    <input type="text" id="navDecision" placeholder="e.g., 0, +5, -3, +50%, 200" style="width: 200px;">
+                    <button id="submitNavBtn" type="button">Go</button>
+                </span>
             </form>
         </div>
 
@@ -63,19 +67,6 @@
                           partition="persist:onland"></webview>
             </div>
         </div>
-
-        <!-- Navigation Controls -->
-        <div class="card hidden" id="navigationCard">
-            <h2>Navigation Control</h2>
-            <div class="status">
-                <strong>AI Decision:</strong> Enter navigation command (0=add, -1=back 1, +1=forward 1, 5=go to page 5)
-            </div>
-            <div class="navigation-controls">
-                <input type="text" id="navDecision" placeholder="0, -1, +1, or page number" style="width: 300px;">
-                <button id="submitNavBtn">Submit Navigation</button>
-            </div>
-            <div id="navStatus"></div>
-        </div>
     </div>
 
     <!-- Log Sidebar -->
@@ -95,6 +86,7 @@
         import { initWebview, getWebview } from './scripts/webview-manager.js';
         import { initUI, showStatus } from './scripts/ui.js';
         import { setupSearchHandler } from './scripts/search-handler.js';
+        import { setupNavigationHandler } from './scripts/navigation-handler.js';
 
         // Get DOM elements
         const webview = document.getElementById('onlandWebview');
@@ -110,6 +102,11 @@
         initWebview(webview, browserStatus, screenshotCard);
         initUI(statusMessage);
         setupSearchHandler(searchForm);
+
+        // Setup navigation controls
+        const navInput = document.getElementById('navDecision');
+        const navBtn = document.getElementById('submitNavBtn');
+        setupNavigationHandler(navInput, navBtn);
 
         // Initialize log
         addLog('info', 'Onland Data Entry loaded');
