@@ -86,8 +86,6 @@ export function pollForPageCount(webview, onScreenshotReady) {
     const maxPolls = PAGE_COUNT_MAX_POLLS;
 
     const poll = (pollCount = 0) => {
-        // addLog('info', 'pollForPageCount called', { pollCount: pollCount });
-
         return webview.executeJavaScript(`
             (() => {
                 const divs = document.getElementsByClassName('page-count');
@@ -95,7 +93,6 @@ export function pollForPageCount(webview, onScreenshotReady) {
             })()
         `).then(raw => {
             const htmlArray = JSON.parse(raw);
-            // console.log('page-count HTML:', htmlArray);
 
             const pageResult = { found: false, divs: htmlArray };
 
@@ -125,8 +122,6 @@ export function pollForPageCount(webview, onScreenshotReady) {
                 }
             }
 
-            // addLog('info', 'Page count poll (' + pollCount + ')', pageResult);
-
             if (pageResult.found) {
                 setState('totalPages', pageResult.totalPages);
                 setState('currentPage', 1); // book viewer starts at page 1
@@ -146,12 +141,6 @@ export function pollForPageCount(webview, onScreenshotReady) {
 
                 // Navigate to 50% using the same code path as manual commands
                 executeNavCommand('50%');
-
-                // // Old: direct navigation and screenshot
-                // setState('currentPage', pageResult.targetPage);
-                // return navigateToPage(webview, pageResult.targetPage).then(() => {
-                //     onScreenshotReady();
-                // });
             } else if (pollCount < maxPolls) {
                 return new Promise(resolve => {
                     setTimeout(() => resolve(poll(pollCount + 1)), PAGE_COUNT_POLL_INTERVAL);
@@ -193,24 +182,6 @@ export function navigateToPage(webview, pageNumber) {
                 bubbles: true
             });
             pageInput.dispatchEvent(enterEvent);
-
-            // // new Promise wrapper with setTimeout - Electron executeJavaScript
-            // // does not properly await nested Promises, causing undefined results
-            // new Promise(resolve => {
-            //     setTimeout(() => {
-            //         resolve({ success: true, pageNumber: ${pageNumber} });
-            //     }, 50);
-            // })
-
-            // // Focus page-count div to trigger onChange
-            // const pageCountDiv = document.querySelector('.page-count');
-            // if (pageCountDiv) {
-            //     pageCountDiv.focus();
-            // }
-
-            // // setTimeout(() => {
-            // //     pageInput.blur();
-            // }, 200);
 
             return { success: true, pageNumber: ${pageNumber} };
         })()

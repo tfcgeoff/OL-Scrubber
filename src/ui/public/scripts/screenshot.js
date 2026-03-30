@@ -232,9 +232,3 @@ export async function captureScreenshot(webview, callback) {
         callback(null);
     }
 }
-
-// // --- OLD: Spinner-based wait for canvas ready (screenshot approach) ---
-// // Used when capturing screenshots via webContents.capturePage()
-// // No longer needed with fetch interceptor approach
-//
-// async function waitForCanvasReady(webview) { ... }

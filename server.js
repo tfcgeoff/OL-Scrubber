@@ -6,9 +6,10 @@
  *          { screenshot: "base64...", state: { lro, descType, ... } }
  *
  * Query params:
- *   lro, descType, descNumber  - trigger a search
- *   incAmt  (+5, -3, 50%, 0)     - navigate pages
- *   DL=true                    - download selected pages
+ *   lro, descType, descNumber  - trigger a search (also deletes any accumulated PDF)
+ *   incAmt  (+5, -3, 50%, 0)     - navigate pages (0 = add current page + PDF capture)
+ *   DL=true                    - return accumulated combined PDF as base64 in response
+ *   confirm=true               - delete accumulated PDF after confirmed download
  *   nextBook=true              - open next book in search results
  */
 
@@ -20,21 +21,51 @@ const app = express();
 let server = null;
 let mainWindow = null;
 
+// PDF Accumulator — runs in main process, accessed via require (shared module cache)
+let pdfAccumulator = null;
+try {
+    pdfAccumulator = require('./src/pdf-accumulator.cjs');
+} catch (e) {
+    // Will be null if pdf-lib not installed — PDF features disabled
+}
+
 // Current state
 let currentState = {};
-
-// Activity logs (received from renderer)
-let activityLogs = [];
 
 // Pending promise resolver - the GET /api handler creates a promise,
 // updateScreenshot() resolves it when the renderer captures
 let pendingResolve = null;
 let pendingTimeout = null;
 
-// Timeout for screenshot capture (20s max)
-const CAPTURE_TIMEOUT = 20000;
+// Fields that are internal to the renderer and should not be exposed in API responses
+const INTERNAL_STATE_KEYS = ['pageApiBaseUrl', 'transactionId'];
+
+// Timeout for screenshot capture (10s max — reduced from 20s)
+const CAPTURE_TIMEOUT = 10000;
+
+/**
+ * Return a copy of currentState with internal implementation details stripped out
+ * @returns {Object} Filtered state safe for API responses
+ */
+function getPublicState() {
+    const public = {};
+    for (const key of Object.keys(currentState)) {
+        if (!INTERNAL_STATE_KEYS.includes(key)) {
+            public[key] = currentState[key];
+        }
+    }
+    return public;
+}
 
 app.use(express.json());
+
+// Status endpoint — lets secondary display verify connection on load
+app.get('/api/status', (req, res) => {
+    res.json({
+        connected: !!(mainWindow && !mainWindow.isDestroyed()),
+        state: getPublicState()
+    });
+});
 
 // Serve secondary display HTML
 app.get('/', (req, res) => {
@@ -48,12 +79,75 @@ app.get('/', (req, res) => {
 
 // Single API endpoint - forwards command, waits for screenshot, returns JSON
 app.get('/api', (req, res) => {
-    const { lro, descType, descNumber, incAmt, DL, nextBook } = req.query;
+    const { lro, descType, descNumber, incAmt, DL, confirm, nextBook } = req.query;
 
     // Must have some action
-    if (!lro && !incAmt && !DL && !nextBook) {
+    if (!lro && !incAmt && !DL && !confirm && !nextBook) {
         res.status(400).json({ error: 'No action specified' });
         return;
+    }
+
+    // Handle PDF confirm/delete (called after successful download to clean up)
+    // This returns immediately without waiting for a screenshot
+    if (confirm) {
+        if (pdfAccumulator) {
+            try {
+                pdfAccumulator.deleteCombined();
+                return res.json({ success: true, message: 'PDF deleted after confirmed download' });
+            } catch (err) {
+                return res.status(500).json({ success: false, error: err.message });
+            }
+        } else {
+            return res.json({ success: true, message: 'PDF accumulator not available' });
+        }
+    }
+
+    // Handle PDF download request (DL=true) — return accumulated combined PDF
+    // This returns immediately without waiting for a screenshot
+    if (DL && !incAmt && !lro) {
+        if (pdfAccumulator) {
+            try {
+                const pdfData = pdfAccumulator.getCombinedPdfBase64();
+                if (pdfData) {
+                    return res.json({
+                        success: true,
+                        pdf: {
+                            base64Data: pdfData.base64Data,
+                            filename: pdfData.filename,
+                            pageCount: pdfData.pageCount,
+                            size: pdfData.size
+                        },
+                        state: getPublicState()
+                    });
+                } else {
+                    return res.json({
+                        success: false,
+                        error: 'No accumulated PDF available',
+                        state: getPublicState()
+                    });
+                }
+            } catch (err) {
+                return res.status(500).json({ success: false, error: err.message });
+            }
+        } else {
+            return res.status(503).json({ success: false, error: 'PDF accumulator not available' });
+        }
+    }
+
+    // Check Onland business hours (EST) for search requests
+    if (lro) {
+        const estNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+        const day = estNow.getDay();
+        const hour = estNow.getHours();
+        const withinHours =
+            (day >= 1 && day <= 4 && hour >= 4) ||
+            (day === 5 && hour >= 4 && hour < 21) ||
+            (day === 6 && hour >= 9 && hour < 18) ||
+            (day === 0 && hour >= 9 && hour < 21);
+        if (!withinHours) {
+            res.status(403).json({ error: 'Onland is closed — business hours: Mon-Thu 4am-midnight, Fri 4am-9pm, Sat 9am-6pm, Sun 9am-9pm (EST)' });
+            return;
+        }
     }
 
     if (!mainWindow || mainWindow.isDestroyed()) {
@@ -71,12 +165,21 @@ app.get('/api', (req, res) => {
 
         // Safety timeout
         pendingTimeout = setTimeout(() => {
-            resolve({ screenshot: null, state: currentState, timeout: true });
+            resolve({ screenshot: null, state: getPublicState(), timeout: true });
         }, CAPTURE_TIMEOUT);
     });
 
-    // Forward search command
+    // Forward search command — also delete any existing accumulated PDF
+    // (new search means we're starting fresh, discard old accumulation)
     if (lro && descType && descNumber) {
+        // Delete any previously accumulated PDF (new search session)
+        if (pdfAccumulator) {
+            try {
+                pdfAccumulator.deleteCombined();
+            } catch (e) {
+                // Ignore cleanup errors
+            }
+        }
         mainWindow.webContents.send('search:execute', { lro, descType, descNumber });
     }
 
@@ -85,8 +188,8 @@ app.get('/api', (req, res) => {
         mainWindow.webContents.send('nav:execute', incAmt);
     }
 
-    // Forward download command
-    if (DL) {
+    // Forward download command (only if not already handled above as PDF download)
+    if (DL && (incAmt || lro)) {
         mainWindow.webContents.send('nav:execute', 'download');
     }
 
@@ -134,11 +237,6 @@ function stopServer() {
     }
 }
 
-// Logs endpoint - returns activity logs from renderer
-app.get('/api/logs', (req, res) => {
-    res.json({ logs: activityLogs });
-});
-
 /**
  * Update the current state (called by renderer)
  * @param {Object} state - The global state object
@@ -159,19 +257,7 @@ function updateScreenshot(base64Data) {
             clearTimeout(pendingTimeout);
             pendingTimeout = null;
         }
-        resolve({ screenshot: base64Data, state: currentState });
-    }
-}
-
-/**
- * Push an activity log entry (called by renderer)
- * @param {Object} entry - Log entry object
- */
-function pushLog(entry) {
-    activityLogs.push(entry);
-    // Keep last 200 entries
-    if (activityLogs.length > 200) {
-        activityLogs = activityLogs.slice(-200);
+        resolve({ screenshot: base64Data, state: getPublicState() });
     }
 }
 
@@ -179,6 +265,5 @@ module.exports = {
     startServer,
     stopServer,
     updateState,
-    updateScreenshot,
-    pushLog
+    updateScreenshot
 };

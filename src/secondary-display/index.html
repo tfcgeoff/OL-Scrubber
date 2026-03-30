@@ -170,7 +170,7 @@
 <body>
     <div class="header">
         <h1>Onland - Remote Control</h1>
-        <span class="status" id="connectionStatus">Connecting...</span>
+        <span class="status" id="connectionStatus" style="display: none;"></span>
     </div>
 
     <!-- Search Panel -->
@@ -229,7 +229,6 @@
         // ---- Display screenshot from base64 ----
         function showScreenshot(base64) {
             if (!base64) return;
-            // Hide both, show whichever matches
             screenshotImg.style.display = 'none';
             screenshotPdf.style.display = 'none';
             placeholder.style.display = 'none';
@@ -241,38 +240,49 @@
             if (isPdf) {
                 screenshotPdf.src = 'data:application/pdf;base64,' + base64;
                 screenshotPdf.style.display = 'block';
-                connectionStatus.textContent = 'Connected — PDF ' + (base64.length * 0.75 / 1024).toFixed(0) + ' KB';
             } else if (isPng) {
                 screenshotImg.src = 'data:image/png;base64,' + base64;
                 screenshotImg.style.display = 'block';
-                connectionStatus.textContent = 'Connected — PNG ' + (base64.length * 0.75 / 1024).toFixed(0) + ' KB';
             } else {
-                // Unknown format — show as raw size and log header bytes
-                const header = base64.substring(0, 20);
-                connectionStatus.textContent = 'Connected — unknown format (' + (base64.length * 0.75 / 1024).toFixed(0) + ' KB, header: ' + header + ')';
-                placeholder.textContent = 'Unknown image format received';
+                placeholder.textContent = 'Unknown format (' + (base64.length * 0.75 / 1024).toFixed(0) + ' KB)';
                 placeholder.style.display = 'block';
-                console.warn('Unknown screenshot format, base64 header:', header);
             }
         }
 
         // ---- Send command, get screenshot back ----
         function sendCommand(params) {
-            connectionStatus.textContent = 'Working...';
+            connectionStatus.textContent = 'Requesting...';
+            connectionStatus.style.display = '';
             connectionStatus.className = 'status';
 
             const qs = new URLSearchParams(params).toString();
             fetch('/api?' + qs)
-                .then(res => res.json())
+                .then(res => {
+                    if (!res.ok) return res.json().then(err => { throw new Error(err.error || 'HTTP ' + res.status); });
+                    return res.json();
+                })
                 .then(data => {
+                    connectionStatus.style.display = 'none';
                     if (data.screenshot) {
                         showScreenshot(data.screenshot);
                     }
-                    connectionStatus.textContent = 'Connected';
-                    connectionStatus.className = 'status';
+                    if (data.pdf) {
+                        // Handle PDF download response
+                        const blob = atob(data.pdf.base64Data);
+                        const arr = new Uint8Array(blob.length);
+                        for (let i = 0; i < blob.length; i++) arr[i] = blob.charCodeAt(i);
+                        const file = new Blob([arr], { type: 'application/pdf' });
+                        const url = URL.createObjectURL(file);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = data.pdf.filename || 'onland.pdf';
+                        a.click();
+                        URL.revokeObjectURL(url);
+                    }
                 })
-                .catch(() => {
-                    connectionStatus.textContent = 'Error';
+                .catch(err => {
+                    connectionStatus.textContent = err.message || 'Error';
+                    connectionStatus.style.display = '';
                     connectionStatus.className = 'status error';
                 });
         }

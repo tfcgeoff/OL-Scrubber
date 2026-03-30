@@ -108,7 +108,8 @@ function takeScreenshot(webview) {
 
 /**
  * Execute the "Add Current Page" action
- * Clicks "Add Current Page" button, then "Next Page" button
+ * Clicks "Add Current Page" button, captures the current page's PDF data
+ * for the accumulator, then clicks "Next Page" button.
  */
 function addCurrentPage(webview) {
     addLog('info', 'Adding current page to selection...');
@@ -136,6 +137,12 @@ function addCurrentPage(webview) {
         setState('pagesSelected', count + 1);
         const dlBtn = document.getElementById('downloadSelectedBtn');
         if (dlBtn) dlBtn.classList.remove('hidden');
+
+        // PDF Accumulation: capture the current page's PDF data from the
+        // webview interceptor cache BEFORE navigating away to the next page.
+        // This must happen synchronously before clicking "Next Page" because
+        // the page navigation will change the cache contents.
+        capturePagePdfForAccumulator(webview);
 
         // Wait briefly then click Next Page
         setTimeout(() => {
@@ -168,6 +175,62 @@ function addCurrentPage(webview) {
                 }, 1000);
             });
         }, 500);
+    });
+}
+
+/**
+ * Capture the current page's PDF data from the webview's fetch interceptor cache
+ * and send it to the main process PDF accumulator via IPC.
+ * This reads window.__onlandPageImages[currentPage] from the webview.
+ * @param {HTMLElement} webview - The webview element
+ */
+function capturePagePdfForAccumulator(webview) {
+    const currentPage = getState('currentPage');
+    if (!currentPage) {
+        addLog('warning', 'PDF ACCUM: No current page in state, skipping accumulation');
+        return;
+    }
+
+    // Read the PDF data from the webview's interceptor cache
+    webview.executeJavaScript(`
+        (() => {
+            const page = ${currentPage};
+            const img = window.__onlandPageImages && window.__onlandPageImages[page];
+            if (img && img.base64Data) {
+                return { found: true, base64Data: img.base64Data, contentType: img.contentType, size: img.size };
+            }
+            return { found: false };
+        })()
+    `).then(result => {
+        if (!result || !result.found) {
+            addLog('warning', 'PDF ACCUM: No intercepted PDF data for page ' + currentPage);
+            return;
+        }
+
+        // Send the PDF data to the main process accumulator
+        if (window.electronAPI && window.electronAPI.addPageToPdf) {
+            const state = {
+                lro: getState('lro'),
+                descType: getState('descType'),
+                descNumber: getState('descNumber'),
+                currentPage: currentPage
+            };
+            window.electronAPI.addPageToPdf(result.base64Data, state).then(addResult => {
+                if (addResult && addResult.success) {
+                    addLog('success', 'PDF ACCUM: Page ' + currentPage + ' saved (' + addResult.pageCount + ' pages total)', {
+                        filename: addResult.filename
+                    });
+                } else {
+                    addLog('error', 'PDF ACCUM: Failed to save page ' + currentPage + ': ' + (addResult ? addResult.error : 'unknown'));
+                }
+            }).catch(err => {
+                addLog('error', 'PDF ACCUM: IPC error: ' + err.message);
+            });
+        } else {
+            addLog('warning', 'PDF ACCUM: electronAPI.addPageToPdf not available');
+        }
+    }).catch(err => {
+        addLog('error', 'PDF ACCUM: Failed to read webview cache for page ' + currentPage + ': ' + err.message);
     });
 }
 

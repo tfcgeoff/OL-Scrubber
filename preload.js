@@ -26,9 +26,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Push screenshot from renderer to main process (for REST API)
     pushScreenshot: (base64Data) => ipcRenderer.invoke('screenshot:update', base64Data),
 
-    // Push activity log to REST API for remote viewing
-    pushLog: (logEntry) => ipcRenderer.invoke('log:push', logEntry),
-
     // Nav command from REST API
     onNavCommand: (callback) => ipcRenderer.on('nav:execute', (_event, command) => callback(command)),
 
@@ -44,7 +41,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Direct page image fetch from Onland API (uses captured auth token)
     fetchPageImage: (pageNumber) => ipcRenderer.invoke('page:fetch', { pageNumber }),
 
-    // Logs
-    getLogs: (since) => ipcRenderer.invoke('logs:get', since),
-    clearLogs: () => ipcRenderer.invoke('logs:clear')
+    // PDF Accumulator - add a page's PDF data from the webview interceptor cache
+    addPageToPdf: (base64Data, state) => ipcRenderer.invoke('pdf:addPage', { base64Data, state }),
+
+    // PDF Accumulator - get info about the accumulated combined PDF
+    getPdfInfo: () => ipcRenderer.invoke('pdf:getCombined'),
+
+    // PDF Accumulator - delete the accumulated PDF (on new search or after confirmed download)
+    deletePdf: () => ipcRenderer.invoke('pdf:delete')
 });

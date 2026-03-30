@@ -5,7 +5,6 @@
 import { addLog } from './logger.js';
 import { showStatus } from './ui.js';
 import { getWebview } from './webview-manager.js';
-// import { generateFormFillScript } from './form-filler.js';
 import { pollForPageCount } from './page-navigator.js';
 import { captureScreenshot, installFetchInterceptor } from './screenshot.js';
 import { setState } from './variables.js';
@@ -65,10 +64,23 @@ export function setupSearchHandler(searchForm) {
 export async function executeSearch(lro, descType, descNumber) {
     const webview = getWebview();
 
+    // Check Onland business hours (EST) before searching
+    const estNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const day = estNow.getDay(); // 0=Sun
+    const hour = estNow.getHours();
+    const withinHours =
+        (day >= 1 && day <= 4 && hour >= 4) ||   // Mon-Thu: 4am - midnight
+        (day === 5 && hour >= 4 && hour < 21) ||   // Fri: 4am - 9pm
+        (day === 6 && hour >= 9 && hour < 18) ||   // Sat: 9am - 6pm
+        (day === 0 && hour >= 9 && hour < 21);      // Sun: 9am - 9pm
+    if (!withinHours) {
+        addLog('error', 'Onland search unavailable outside business hours (EST)', { estTime: estNow.toLocaleString('en-US') });
+        showStatus('Onland is closed — check business hours', 'error');
+        return;
+    }
+
     // Navigate directly to search results URL
     const searchUrl = `https://www.onland.ca/ui/${lro}/books/search/1?lcv1=${encodeURIComponent(descNumber)}&lct1=${encodeURIComponent(descType)}&page=1`;
-
-    // addLog('info', 'Navigating to search results', { url: searchUrl });
 
     setState('lro', lro);
     setState('descType', descType);
@@ -86,71 +98,8 @@ export async function executeSearch(lro, descType, descNumber) {
         });
     });
 
-    // addLog('info', 'Page loaded - polling for results...');
     waitForResults(webview);
 }
-
-/**
- * Poll for form elements, fill the form, and click search
- * NOTE: Currently unused - using direct URL navigation instead
- */
-// function fillFormAndSearch(webview, descType, descNumber) {
-//     let polls = 0;
-//     const poll = () => {
-//         webview.executeJavaScript(`document.getElementById('lct1') !== null`).then(found => {
-//             if (found) {
-//                 addLog('success', 'Form ready - filling fields...');
-//                 executeFormFill(webview, descType, descNumber);
-//             } else if (polls < SEARCH_FORM_MAX_POLLS) {
-//                 polls++;
-//                 setTimeout(poll, SEARCH_FORM_POLL_INTERVAL);
-//             } else {
-//                 addLog('error', 'Form element lct1 not found after 30 seconds');
-//                 showStatus('Form failed to load', 'error');
-//             }
-//         });
-//     };
-//     poll();
-// }
-
-/**
- * Execute the form fill script in the webview
- * NOTE: Currently unused - using direct URL navigation instead
- */
-// function executeFormFill(webview, descType, descNumber) {
-//     const script = `
-//         (() => {
-//             const descType = ${JSON.stringify(descType)};
-//             const descNumber = ${JSON.stringify(descNumber)};
-//             const log = [];
-//             const typeSelect = document.getElementById('lct1');
-//             if (!typeSelect) { log.push({ step: 'error', message: 'lct1 not found' }); return { success: false, log }; }
-//             let matched = false;
-//             for (let i = 0; i < typeSelect.options.length; i++) {
-//                 const opt = typeSelect.options[i];
-//                 if (opt.textContent.trim().toLowerCase() === descType.toLowerCase()) {
-//                     typeSelect.selectedIndex = i; typeSelect.value = opt.value; opt.selected = true;
-//                     matched = true; break;
-//                 }
-//             }
-//             typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
-//             setTimeout(() => {
-//                 const numInput = document.getElementById('lcv1');
-//                 if (numInput && !numInput.disabled) {
-//                     numInput.value = descNumber;
-//                     numInput.dispatchEvent(new Event('input', { bubbles: true }));
-//                     numInput.dispatchEvent(new Event('change', { bubbles: true }));
-//                     const searchBtn = document.getElementById('searchButton');
-//                     if (searchBtn) searchBtn.click();
-//                 }
-//             }, 500);
-//             return { success: matched, log };
-//         })()
-//     `;
-//     webview.executeJavaScript(script).then(result => {
-//         if (result.success) { waitForViewDetails(webview); }
-//     });
-// }
 
 /**
  * Poll for search results (View Details, no results, or server error)
@@ -194,7 +143,6 @@ function waitForResults(webview) {
                 `).then(clickResult => {
                     if (clickResult.clicked) {
                         addLog('success', 'View Details clicked');
-                        // addLog('info', 'Waiting for book page to load...');
 
                         // Install fetch interceptor before book viewer loads pages
                         installFetchInterceptor(webview);
@@ -205,10 +153,7 @@ function waitForResults(webview) {
                             const check = () => {
                                 webview.executeJavaScript(`window.location.href`).then(url => {
                                     if (!url.includes('/search') || attempts > 30) {
-                                        // addLog('info', 'Book page URL detected', { url });
                                         pollForPageCount(webview);
-                                        // takeAndDisplayScreenshot is no longer needed here —
-                                        // pollForPageCount → executeNavCommand('50%') → captureScreenshot handles it
                                     } else {
                                         attempts++;
                                         setTimeout(check, 500);

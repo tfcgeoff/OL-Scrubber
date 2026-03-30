@@ -76,8 +76,4 @@ export function addLog(level, message, data = null, screenshot = null) {
     logsContainer.appendChild(entry);
     logsContainer.scrollTop = logsContainer.scrollHeight;
 
-    // Push to REST API for remote viewing
-    if (window.electronAPI && window.electronAPI.pushLog) {
-        window.electronAPI.pushLog({ level, message, source, data, time: new Date().toISOString() });
-    }
 }

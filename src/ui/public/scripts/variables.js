@@ -51,8 +51,5 @@ export const PAGE_COUNT_POLL_INTERVAL = 500;
 export const SEARCH_FORM_MAX_POLLS = 60;
 export const SEARCH_FORM_POLL_INTERVAL = 500;
 
-// Form filler timing (unused - navigating directly to URL now)
-// export const FORM_DROPDOWN_WAIT = 500;
-
 // UI timing
 export const STATUS_MESSAGE_DURATION = 5000;

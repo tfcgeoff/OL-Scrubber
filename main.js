@@ -175,7 +175,7 @@ const isDev = process.argv.includes('--dev');
 
 // Parse --port= CLI arg for REST API server
 const portArg = process.argv.find(arg => arg.startsWith('--port='));
-const restPort = portArg ? parseInt(portArg.split('=')[1], 10) : 3000;
+const restPort = portArg ? parseInt(portArg.split('=')[1], 10) : 3001;
 
 let mainWindow = null;
 const boundsPath = path.join(app.getPath('userData'), 'window-bounds.json');
@@ -274,10 +274,10 @@ function createWindow() {
         guestWebContents.debugger.on('message', (_event, method, params) => {
             if (method === 'Fetch.requestPaused') {
                 const pausedUrl = (params.request && params.request.url) || '';
+                const requestId = params.requestId;
                 if (pausedUrl.includes('/transactions/') && pausedUrl.includes('/pages?page=')) {
                     const pageMatch = pausedUrl.match(/page=(\d+)/);
                     const pageNum = pageMatch ? parseInt(pageMatch[1], 10) : null;
-                    const requestId = params.requestId;
 
                     if (!pageNum) {
                         guestWebContents.debugger.sendCommand('Fetch.continueResponse', { requestId }).catch(() => {});
@@ -288,19 +288,35 @@ function createWindow() {
                     guestWebContents.debugger.sendCommand('Fetch.getResponseBody', { requestId })
                         .then(result => {
                             if (result && result.body) {
-                                const contentType = (result.base64Encoded ? 'application/octet-stream' :
-                                    (params.responseHeaders && (params.responseHeaders['content-type'] || params.responseHeaders['Content-Type'])) || '');
+                                // Decode body if CDP base64-encoded it for transport
+                                const rawBody = result.base64Encoded
+                                    ? Buffer.from(result.body, 'base64').toString()
+                                    : result.body;
+                                const headerCT = (params.responseHeaders &&
+                                    (params.responseHeaders['content-type'] || params.responseHeaders['Content-Type'])) || '';
+                                const contentType = headerCT || (result.base64Encoded ? 'application/octet-stream' : '');
                                 let base64Data;
 
-                                if (result.base64Encoded) {
-                                    base64Data = result.body;
-                                } else {
-                                    // Text response — check for JSON with content field
+                                // Extract the actual page image data from the response
+                                // Onland API returns JSON: {"content":"<base64_pdf>"} or {"image":"<base64_pdf>"}
+                                // In rare cases it may return raw binary PDF
+                                if (headerCT.includes('json') || headerCT.includes('text')) {
+                                    // Response is JSON — extract the embedded base64 content
                                     try {
-                                        const json = JSON.parse(result.body);
-                                        base64Data = json.content || Buffer.from(result.body).toString('base64');
+                                        const json = JSON.parse(rawBody);
+                                        base64Data = json.content || json.image || Buffer.from(rawBody).toString('base64');
+                                        log('FETCH CDP: JSON response, extracted content field');
                                     } catch (e) {
-                                        base64Data = Buffer.from(result.body).toString('base64');
+                                        // Not valid JSON despite content-type — base64 encode as-is
+                                        base64Data = Buffer.from(rawBody).toString('base64');
+                                        log('FETCH CDP: Text response, not JSON, encoded as base64');
+                                    }
+                                } else {
+                                    // Binary response — body is already the raw data (or base64 of raw data)
+                                    if (result.base64Encoded) {
+                                        base64Data = result.body; // already base64
+                                    } else {
+                                        base64Data = Buffer.from(rawBody).toString('base64');
                                     }
                                 }
 
@@ -515,17 +531,6 @@ ipcMain.handle('state:update', (event, state) => {
     return { success: true };
 });
 
-// IPC handler: push activity log to REST API for remote viewing
-ipcMain.handle('log:push', (event, logEntry) => {
-    try {
-        const server = require('./server.js');
-        server.pushLog(logEntry);
-    } catch (e) {
-        // Server may not be running
-    }
-    return { success: true };
-});
-
 // IPC handler: screenshot push from renderer to REST API
 ipcMain.handle('screenshot:update', (event, base64Data) => {
     try {
@@ -596,11 +601,28 @@ ipcMain.handle('page:fetch', async (event, { pageNumber }) => {
                 response.on('data', (chunk) => chunks.push(chunk));
                 response.on('end', () => {
                     const buffer = Buffer.concat(chunks);
+                    const text = buffer.toString();
+                    let pageData;
+
+                    // Same logic as CDP path — extract from JSON if needed
+                    if (contentType.includes('json') || contentType.includes('text')) {
+                        try {
+                            const json = JSON.parse(text);
+                            pageData = json.content || json.image || text;
+                            log('PAGE FETCH: JSON response, extracted content field');
+                        } catch (e) {
+                            pageData = buffer.toString('base64');
+                            log('PAGE FETCH: Text response, not JSON, encoded as base64');
+                        }
+                    } else {
+                        pageData = buffer.toString('base64');
+                    }
+
                     try {
                         const server = require('./server.js');
-                        server.updateScreenshot(buffer.toString('base64'));
+                        server.updateScreenshot(pageData);
                     } catch (e) {}
-                    resolve({ success: true, data: buffer.toString('base64'), contentType, size: buffer.length, source: 'api' });
+                    resolve({ success: true, data: pageData, contentType, size: pageData.length, source: 'api' });
                 });
             });
             request.on('error', (error) => {
@@ -645,5 +667,57 @@ ipcMain.handle('webview:screenshot', async (event, webviewId) => {
 
     } catch (error) {
         return { success: false, message: error.message };
+    }
+});
+
+// --- PDF Accumulator IPC Handlers ---
+// These allow the renderer to capture page PDFs during "Add Current Page" (incAmt=0)
+// and let the server return the accumulated combined PDF on DL=true.
+
+const pdfAccumulator = require('./src/pdf-accumulator.cjs');
+
+// IPC: add a page's PDF data to the accumulator (called from renderer after "Add Current Page")
+ipcMain.handle('pdf:addPage', async (event, { base64Data, state }) => {
+    try {
+        const result = await pdfAccumulator.addPage(base64Data, state);
+        log('PDF ACCUM: Added page', result.pageCount, 'to', result.filename);
+        return { success: true, ...result };
+    } catch (err) {
+        log('PDF ACCUM: Error adding page:', err.message);
+        return { success: false, error: err.message };
+    }
+});
+
+// IPC: get the accumulated combined PDF info (path, filename, page count)
+ipcMain.handle('pdf:getCombined', async () => {
+    return pdfAccumulator.getCombinedPdf();
+});
+
+// IPC: get the accumulated combined PDF as base64 data (for API response)
+ipcMain.handle('pdf:getCombinedBase64', async () => {
+    try {
+        const result = pdfAccumulator.getCombinedPdfBase64();
+        if (result) {
+            log('PDF ACCUM: Returning combined PDF:', result.filename, '(' + result.pageCount + ' pages, ' + result.size + ' bytes)');
+        } else {
+            log('PDF ACCUM: No combined PDF available');
+        }
+        return result;
+    } catch (err) {
+        log('PDF ACCUM: Error reading combined PDF:', err.message);
+        return null;
+    }
+});
+
+// IPC: delete the accumulated PDF and associated individual page files
+// Called when a new search starts (discard old accumulation) or after confirmed download
+ipcMain.handle('pdf:delete', () => {
+    try {
+        pdfAccumulator.deleteCombined();
+        log('PDF ACCUM: Deleted accumulated PDF');
+        return { success: true };
+    } catch (err) {
+        log('PDF ACCUM: Error deleting:', err.message);
+        return { success: false, error: err.message };
     }
 });
