@@ -7,6 +7,7 @@ const state = {
     lro: null,
     descType: null,
     descNumber: null,
+    filter: null,
     totalBooks: null,
     currentBook: null,
     totalPages: null,

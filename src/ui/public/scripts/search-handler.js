@@ -59,9 +59,10 @@ export function setupSearchHandler(searchForm) {
  * @param {string} lro - The LRO number
  * @param {string} descType - The description type
  * @param {string} descNumber - The description number
+ * @param {string} [filter] - Optional filter value to append to search URL
  * @returns {Promise} Promise that resolves when search is complete
  */
-export async function executeSearch(lro, descType, descNumber) {
+export async function executeSearch(lro, descType, descNumber, filter) {
     const webview = getWebview();
 
     // Check Onland business hours (EST) before searching
@@ -80,7 +81,13 @@ export async function executeSearch(lro, descType, descNumber) {
     }
 
     // Navigate directly to search results URL
-    const searchUrl = `https://www.onland.ca/ui/${lro}/books/search/1?lcv1=${encodeURIComponent(descNumber)}&lct1=${encodeURIComponent(descType)}&page=1`;
+    let searchUrl = `https://www.onland.ca/ui/${lro}/books/search/1?lcv1=${encodeURIComponent(descNumber)}&lct1=${encodeURIComponent(descType)}&page=1`;
+    if (filter) {
+        searchUrl += `&township=${encodeURIComponent(filter)}`;
+        setState('filter', filter);
+    } else {
+        setState('filter', null);
+    }
 
     setState('lro', lro);
     setState('descType', descType);

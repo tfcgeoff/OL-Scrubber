@@ -7,10 +7,12 @@
  *
  * Query params:
  *   lro, descType, descNumber  - trigger a search (also deletes any accumulated PDF)
+ *   filter                     - optional filter value appended to search URL
  *   incAmt  (+5, -3, 50%, 0)     - navigate pages (0 = add current page + PDF capture)
  *   DL=true                    - return accumulated combined PDF as base64 in response
  *   confirm=true               - delete accumulated PDF after confirmed download
  *   nextBook=true              - open next book in search results
+ *   lastBook=true              - open last book in search results
  */
 
 const express = require('express');
@@ -79,10 +81,10 @@ app.get('/', (req, res) => {
 
 // Single API endpoint - forwards command, waits for screenshot, returns JSON
 app.get('/api', (req, res) => {
-    const { lro, descType, descNumber, incAmt, DL, confirm, nextBook } = req.query;
+    const { lro, descType, descNumber, filter, incAmt, DL, confirm, nextBook, lastBook } = req.query;
 
     // Must have some action
-    if (!lro && !incAmt && !DL && !confirm && !nextBook) {
+    if (!lro && !incAmt && !DL && !confirm && !nextBook && !lastBook) {
         res.status(400).json({ error: 'No action specified' });
         return;
     }
@@ -180,7 +182,9 @@ app.get('/api', (req, res) => {
                 // Ignore cleanup errors
             }
         }
-        mainWindow.webContents.send('search:execute', { lro, descType, descNumber });
+        const searchData = { lro, descType, descNumber };
+        if (filter) searchData.filter = filter;
+        mainWindow.webContents.send('search:execute', searchData);
     }
 
     // Forward nav command
@@ -196,6 +200,11 @@ app.get('/api', (req, res) => {
     // Forward next book command
     if (nextBook) {
         mainWindow.webContents.send('next-book:execute', {});
+    }
+
+    // Forward last book command
+    if (lastBook) {
+        mainWindow.webContents.send('last-book:execute', {});
     }
 
     // Wait for screenshot (resolved by updateScreenshot) or timeout

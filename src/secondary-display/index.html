@@ -187,8 +187,11 @@
         </select>
         <label for="searchDescNum">#</label>
         <input type="text" id="searchDescNum" placeholder="#" style="width: 100px;">
+        <label for="searchFilter">Filter</label>
+        <input type="text" id="searchFilter" placeholder="Filter" style="width: 120px;">
         <button class="btn btn-primary" id="searchBtn">Search</button>
         <button class="btn btn-secondary" id="searchNextBookBtn">Next Book</button>
+        <button class="btn btn-secondary" id="searchLastBookBtn">Last Book</button>
         <button class="btn btn-secondary" id="searchAddBtn">+ Add Page</button>
         <button class="btn btn-secondary" id="searchDownloadBtn">Download Selected</button>
     </div>
@@ -225,6 +228,7 @@
         const searchLro = document.getElementById('searchLro');
         const searchDescType = document.getElementById('searchDescType');
         const searchDescNum = document.getElementById('searchDescNum');
+        const searchFilter = document.getElementById('searchFilter');
 
         // ---- Display screenshot from base64 ----
         function showScreenshot(base64) {
@@ -292,19 +296,23 @@
             const lro = searchLro.value.trim();
             const descType = searchDescType.value;
             const descNumber = searchDescNum.value.trim();
+            const filter = searchFilter.value.trim();
             if (!lro || !descType || !descNumber) return;
-            sendCommand({ lro, descType, descNumber });
+            const params = { lro, descType, descNumber };
+            if (filter) params.filter = filter;
+            sendCommand(params);
         }
 
         document.getElementById('searchBtn').addEventListener('click', sendSearch);
-        [searchLro, searchDescNum].forEach(el => {
+        [searchLro, searchDescNum, searchFilter].forEach(el => {
             el.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') { e.preventDefault(); sendSearch(); }
             });
         });
 
-        // Next Book, Add Page, Download
+        // Next Book, Last Book, Add Page, Download
         document.getElementById('searchNextBookBtn').addEventListener('click', () => sendCommand({ nextBook: 'true' }));
+        document.getElementById('searchLastBookBtn').addEventListener('click', () => sendCommand({ lastBook: 'true' }));
         document.getElementById('searchAddBtn').addEventListener('click', () => sendCommand({ incAmt: '0' }));
         document.getElementById('searchDownloadBtn').addEventListener('click', () => sendCommand({ DL: 'true' }));
 
@@ -325,6 +333,23 @@
         document.querySelectorAll('.quick-nav button').forEach(btn => {
             btn.addEventListener('click', () => sendNavCommand(btn.dataset.cmd));
         });
+
+        // ---- Update Next Book button label with current book count ----
+        const nextBookBtn = document.getElementById('searchNextBookBtn');
+        function updateBookLabel() {
+            fetch('/api/status')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.state && data.state.currentBook && data.state.totalBooks) {
+                        nextBookBtn.textContent = `Next Book (${data.state.currentBook}/${data.state.totalBooks})`;
+                    } else {
+                        nextBookBtn.textContent = 'Next Book';
+                    }
+                })
+                .catch(() => {});
+        }
+        updateBookLabel();
+        setInterval(updateBookLabel, 3000);
     </script>
 </body>
 </html>

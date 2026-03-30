@@ -133,7 +133,7 @@
                 document.getElementById('lro').value = params.lro;
                 document.getElementById('descriptionType').value = params.descType;
                 document.getElementById('descriptionNumber').value = params.descNumber;
-                executeSearch(params.lro, params.descType, params.descNumber);
+                executeSearch(params.lro, params.descType, params.descNumber, params.filter);
             });
         }
 
@@ -216,6 +216,83 @@
                                 });
                             } else {
                                 addLog('warning', 'No more books in results');
+                            }
+                        });
+                    };
+                    setTimeout(waitForResults, 1000);
+                });
+            });
+        }
+
+        // Listen for last-book command from REST API
+        if (window.electronAPI && window.electronAPI.onLastBookCommand) {
+            window.electronAPI.onLastBookCommand(() => {
+                addLog('info', 'Last book command from secondary display');
+                const webview = getWebview();
+                if (!webview) return;
+
+                const lro = getState('lro');
+                const descType = getState('descType');
+                const descNumber = getState('descNumber');
+                const totalBooks = getState('totalBooks');
+
+                if (!totalBooks) {
+                    addLog('warning', 'No total books count available');
+                    return;
+                }
+
+                const currentBook = totalBooks;
+                setState('currentBook', currentBook);
+
+                // Navigate back to search results
+                const searchUrl = `https://www.onland.ca/ui/${lro}/books/search/1?lcv1=${encodeURIComponent(descNumber)}&lct1=${encodeURIComponent(descType)}&page=1`;
+                webview.src = searchUrl;
+
+                webview.addEventListener('dom-ready', function onReady() {
+                    webview.removeEventListener('dom-ready', onReady);
+
+                    // Wait for results, then click the last View Details button
+                    const waitForResults = () => {
+                        webview.executeJavaScript(`
+                            (() => {
+                                const viewBtns = document.querySelectorAll('button[aria-label*="View Details"]');
+                                return { count: viewBtns.length };
+                            })()
+                        `).then(result => {
+                            if (result.count >= currentBook) {
+                                addLog('info', 'Opening last book (' + currentBook + ')');
+                                webview.executeJavaScript(`
+                                    (() => {
+                                        const btns = document.querySelectorAll('button[aria-label*="View Details"]');
+                                        if (btns[currentBook - 1]) {
+                                            btns[currentBook - 1].click();
+                                            return { clicked: true };
+                                        }
+                                        return { clicked: false };
+                                    })()
+                                `).then(clickResult => {
+                                    if (clickResult.clicked) {
+                                        // Install fetch interceptor before book viewer loads
+                                        installFetchInterceptor(webview);
+                                        // Wait for book page, detect page count, screenshot
+                                        const waitForBookPage = () => {
+                                            webview.executeJavaScript(`window.location.href`).then(url => {
+                                                if (!url.includes('/search')) {
+                                                    pollForPageCount(webview, () => {
+                                                        captureScreenshot(webview, (data) => {
+                                                            if (data) addLog('info', 'Screenshot captured for book ' + currentBook);
+                                                        });
+                                                    });
+                                                } else {
+                                                    setTimeout(waitForBookPage, 500);
+                                                }
+                                            });
+                                        };
+                                        waitForBookPage();
+                                    }
+                                });
+                            } else {
+                                addLog('warning', 'Not enough books in results for last book');
                             }
                         });
                     };
