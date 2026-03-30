@@ -182,7 +182,7 @@ const boundsPath = path.join(app.getPath('userData'), 'window-bounds.json');
 const defaultBounds = { width: 1600, height: 900, x: 100, y: 0 };
 
 // Download state
-let downloadDirPath = path.join(app.getPath('home'), 'Documents', 'Onland', 'Downloads');
+let downloadDirPath = path.join(__dirname, 'shared', 'pdf');
 let lastDownload = null;
 
 // Captured page API data for direct fetch (replaces screenshots)

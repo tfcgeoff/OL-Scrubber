@@ -1,5 +1,5 @@
 {
-  "name": "web-data-entry",
+  "name": "onland-scrub",
   "version": "0.1.0",
   "description": "Electron app for land records data entry",
   "main": "main.js",
