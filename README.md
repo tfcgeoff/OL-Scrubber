@@ -1,51 +1,58 @@
-# Web Data Entry
+# OL-Scrubber
 
-Playwright/Node.js application to enter extracted data into government land records websites.
+Electron app for automating Onland.ca web scraping with remote control via REST API. Browse land registry books, accumulate pages into PDFs, and control everything from a browser or script.
 
-## Purpose
-Automate data entry into government land records site and provide UI for manual search requests.
+## Features
 
-## Setup
+- Embedded webview browsing onland.ca
+- AI-style navigation commands (`+5`, `-3`, `50%`, `0`, etc.)
+- REST API for remote control from any browser or script
+- PDF page accumulation (save individual pages, auto-combine into single PDF)
+- Search automation for LRO/Plan/Concession/Section/Condo/Parcel
+- Screenshot capture of book pages via CDP/fetch interception
+- Business hours enforcement for Onland API
+
+## Installation
 
 ```bash
-# Install dependencies
-npm install
-
-# Install Playwright browsers
-npx playwright install chromium
-
-# Run application
-npm start
+npm install && npm start
 ```
 
-The UI will be available at http://localhost:8002
+## REST API
 
-## API Endpoints
+The app runs an Express server alongside Electron for remote control.
 
-- `POST /api/search` - Manual search request from UI
-- `POST /api/ocr-complete` - Notification from OCR app
-- `GET /api/results/{search_id}` - Retrieve search results
-- `GET /api/ocr-status` - Check OCR processing status
+| | |
+|---|---|
+| **Default port** | `3001` |
+| **Remote control UI** | http://localhost:3001 |
+| **Commands** | `GET /api` (query params: `lro`, `descType`, `descNumber`, `incAmt`, `DL`, `nextBook`) |
+| **Health check** | `GET /api/status` |
 
-## Components
-
-- `automation/land_site.py` - Government site interaction (Playwright)
-- `automation/form_filler.py` - Form data entry logic
-- `api/routes.js` - Express API endpoints
-- `ui/server.js` - Web UI server (port 8002)
-- `ui/public/index.html` - Simple web interface
+Full endpoint documentation, response formats, and examples: see [SCRIPTS_DOCUMENTATION.md](SCRIPTS_DOCUMENTATION.md).
 
 ## Usage
 
-1. Open http://localhost:8002 in browser
-2. Enter property owner name
-3. Click "Search Records"
-4. View results when complete
+```bash
+# Search for Plan 606 in LRO 55
+curl "http://localhost:3001/api?lro=55&descType=Plan&descNumber=606"
 
-## Integration with OCR App
+# Advance 5 pages
+curl "http://localhost:3001/api?incAmt=%2B5"
 
-The OCR app (`ocr-transcriber`) notifies this app when processing is complete via:
-- REST API callback to `/api/ocr-complete`
-- File-based shared storage (`shared/extracted/` names JSON files)
+# Add current page to PDF and advance
+curl "http://localhost:3001/api?incAmt=0"
 
-This app then automatically searches for each extracted name.
+# Jump to 50% of remaining pages
+curl "http://localhost:3001/api?incAmt=50%25"
+
+# Download accumulated PDF
+curl "http://localhost:3001/api?DL=true"
+```
+
+## Configuration
+
+| CLI Argument | Description |
+|---|---|
+| `--port=XXXX` | Set REST API port (default: `3001`) |
+| `--dev` | Enable dev mode (`npm run dev`) |
