@@ -218,12 +218,17 @@ function saveBounds() {
 function createWindow() {
     const bounds = loadBounds();
 
+    // Detect headless mode from command line args (--headless flag)
+    const isHeadless = process.argv.includes('--headless');
+    const isWindows = process.platform === 'win32';
+
     mainWindow = new BrowserWindow({
         width: bounds.width,
         height: bounds.height,
         minWidth: 1200,
         x: bounds.x,
         y: bounds.y,
+        show: !isHeadless,  // Hidden in headless mode
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
@@ -233,6 +238,13 @@ function createWindow() {
             nodeIntegrationInSubFrames: true
         }
     });
+
+    if (isHeadless) {
+        log('Running in headless mode (window hidden, REST API only)');
+        // On Linux, webview may need a display. Try app.commandLine.appendSwitch as fallback.
+        // On Windows, headless webview works without special setup.
+        // If webview doesn't work, the app should suggest xvfb-run on Linux.
+    }
 
     mainWindow.loadFile(path.join(__dirname, 'src', 'ui', 'public', 'index.html'));
 

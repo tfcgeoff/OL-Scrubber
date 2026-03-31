@@ -6,6 +6,7 @@ import { addLog } from './logger.js';
 import { PAGE_COUNT_MAX_POLLS, PAGE_COUNT_POLL_INTERVAL } from './variables.js';
 import { setState, getState } from './variables.js';
 import { executeNavCommand } from './navigation-handler.js';
+import { parseBookTitleRange, estimateStartPage } from './search-handler.js';
 
 /**
  * DEBUG: Test fetching a page directly from the Onland API
@@ -135,12 +136,35 @@ export function pollForPageCount(webview, onScreenshotReady) {
                 // DEBUG: Probe for page API (temporary)
                 probePDFjs(webview);
 
-                // setNavigationVisible is called by executeNavCommand which is in navigation-handler.js
-                // Importing it here would create a circular dependency, so we call it indirectly
-                // The 50% command below triggers setNavigationVisible via setupNavigationHandler
+                // Scrape the book title from the page for smart page estimation
+                scrapeBookTitle(webview);
 
-                // Navigate to 50% using the same code path as manual commands
-                executeNavCommand('50%');
+                // Calculate best starting page using book range if available,
+                // otherwise fall back to 50%
+                const rangeStart = getState('bookRangeStart');
+                const rangeEnd = getState('bookRangeEnd');
+                const descNumber = parseInt(getState('descNumber'), 10);
+                const totalPages = pageResult.totalPages;
+
+                let startPage;
+                if (rangeStart && rangeEnd && !isNaN(descNumber)) {
+                    startPage = estimateStartPage(descNumber, rangeStart, rangeEnd, totalPages);
+                    addLog('info', 'Smart page estimation applied', {
+                        target: descNumber,
+                        range: `${rangeStart}-${rangeEnd}`,
+                        estimatedPage: startPage,
+                        totalPages
+                    });
+                } else {
+                    startPage = Math.max(1, Math.floor(totalPages / 2));
+                    addLog('info', 'No book range available, using 50% fallback', {
+                        startPage,
+                        totalPages
+                    });
+                }
+
+                // Navigate to estimated starting page
+                executeNavCommand(String(startPage));
             } else if (pollCount < maxPolls) {
                 return new Promise(resolve => {
                     setTimeout(() => resolve(poll(pollCount + 1)), PAGE_COUNT_POLL_INTERVAL);
@@ -199,5 +223,60 @@ export function navigateToPage(webview, pageNumber) {
         const errMsg = navErr instanceof Error ? navErr.message : String(navErr);
         addLog('error', 'Page navigation failed: ' + errMsg);
         return null;
+    });
+}
+
+/**
+ * Scrape the book title from the book viewer page to extract page range info
+ * Looks for common patterns like "PARCEL 952 TO 1029" in heading/title elements
+ * @param {HTMLElement} webview - The webview element
+ */
+function scrapeBookTitle(webview) {
+    webview.executeJavaScript(`
+        (() => {
+            // Try multiple selectors to find the book title
+            const selectors = [
+                'h1', 'h2', 'h3',
+                '[class*="title"]',
+                '[class*="header"]',
+                '[class*="book-title"]',
+                '[class*="book-title"]'
+            ];
+
+            for (const sel of selectors) {
+                const elements = document.querySelectorAll(sel);
+                for (const el of elements) {
+                    const text = (el.textContent || el.innerText || '').trim();
+                    // Look for range patterns in the title (e.g., "PARCEL 952 TO 1029")
+                    if (text.match(/\d+\s+(TO|to|–|-)\s+\d+/)) {
+                        return { found: true, title: text, selector: sel };
+                    }
+                }
+            }
+
+            // Fallback: check the page URL or any meta/title tags
+            const pageTitle = document.title || '';
+            return { found: false, title: pageTitle, meta: document.querySelector('meta[property="og:title"]')?.content || null };
+        })()
+    `).then(result => {
+        if (result.found) {
+            setState('bookTitle', result.title);
+            const range = parseBookTitleRange(result.title);
+            if (range) {
+                setState('bookRangeStart', range.start);
+                setState('bookRangeEnd', range.end);
+                addLog('info', 'Book title scraped', {
+                    title: result.title,
+                    rangeStart: range.start,
+                    rangeEnd: range.end
+                });
+            } else {
+                addLog('info', 'Book title found but range not parseable', { title: result.title });
+            }
+        } else {
+            addLog('info', 'No book title with range found', { pageTitle: result.title });
+        }
+    }).catch(err => {
+        addLog('error', 'Book title scrape failed: ' + (err.message || String(err)));
     });
 }

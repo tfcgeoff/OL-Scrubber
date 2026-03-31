@@ -6,13 +6,14 @@
  *          { screenshot: "base64...", state: { lro, descType, ... } }
  *
  * Query params:
- *   lro, descType, descNumber  - trigger a search (also deletes any accumulated PDF)
- *   filter                     - optional filter value appended to search URL
- *   incAmt  (+5, -3, 50%, 0)     - navigate pages (0 = add current page + PDF capture)
- *   DL=true                    - return accumulated combined PDF as base64 in response
- *   confirm=true               - delete accumulated PDF after confirmed download
- *   nextBook=true              - open next book in search results
- *   lastBook=true              - open last book in search results
+ *   lro, descType, descNumber     - trigger a search (also deletes any accumulated PDF)
+ *   descType2, descNumber2       - optional secondary search (e.g., Lot, Parklot with Concession)
+ *   filter                       - optional township filter
+ *   incAmt  (+5, -3, 50%, 0)      - navigate pages (0 = add current page + PDF capture)
+ *   DL=true                      - return accumulated combined PDF as base64 in response
+ *   confirm=true                 - delete accumulated PDF after confirmed download
+ *   nextBook=true                - open next book in search results
+ *   lastBook=true                - open last book in search results
  */
 
 const express = require('express');
@@ -40,7 +41,7 @@ let pendingResolve = null;
 let pendingTimeout = null;
 
 // Fields that are internal to the renderer and should not be exposed in API responses
-const INTERNAL_STATE_KEYS = ['pageApiBaseUrl', 'transactionId'];
+const INTERNAL_STATE_KEYS = ['pageApiBaseUrl', 'transactionId', 'bookTitle', 'bookRangeStart', 'bookRangeEnd'];
 
 // Timeout for screenshot capture (10s max — reduced from 20s)
 const CAPTURE_TIMEOUT = 10000;
@@ -81,7 +82,7 @@ app.get('/', (req, res) => {
 
 // Single API endpoint - forwards command, waits for screenshot, returns JSON
 app.get('/api', (req, res) => {
-    const { lro, descType, descNumber, filter, incAmt, DL, confirm, nextBook, lastBook } = req.query;
+    const { lro, descType, descNumber, descType2, descNumber2, filter, incAmt, DL, confirm, nextBook, lastBook } = req.query;
 
     // Must have some action
     if (!lro && !incAmt && !DL && !confirm && !nextBook && !lastBook) {
@@ -183,6 +184,8 @@ app.get('/api', (req, res) => {
             }
         }
         const searchData = { lro, descType, descNumber };
+        if (descType2) searchData.descType2 = descType2;
+        if (descNumber2) searchData.descNumber2 = descNumber2;
         if (filter) searchData.filter = filter;
         mainWindow.webContents.send('search:execute', searchData);
     }

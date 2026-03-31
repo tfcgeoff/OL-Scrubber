@@ -55,14 +55,87 @@ export function setupSearchHandler(searchForm) {
 }
 
 /**
+ * Build a search URL from parameters
+ * Supports all Onland search patterns including dual-search (lcv2/lct2)
+ * @param {Object} params - Search parameters
+ * @param {string} params.lro - LRO number
+ * @param {string} params.descType - Primary search type
+ * @param {string} params.descNumber - Primary search value
+ * @param {string} [params.descType2] - Secondary search type (Lot, Parklot, Parcel, Section)
+ * @param {string} [params.descNumber2] - Secondary search value
+ * @param {string} [params.filter] - Township filter
+ * @returns {string} Full search URL
+ */
+export function buildSearchUrl(params) {
+    let url = `https://www.onland.ca/ui/${params.lro}/books/search/1?lcv1=${encodeURIComponent(params.descNumber)}&lct1=${encodeURIComponent(params.descType)}&page=1`;
+
+    // Dual search (e.g., Section + Parcel, Concession + Lot)
+    if (params.descType2 && params.descNumber2) {
+        url += `&lcv2=${encodeURIComponent(params.descNumber2)}&lct2=${encodeURIComponent(params.descType2)}`;
+    }
+
+    // Township filter
+    if (params.filter) {
+        url += `&township=${encodeURIComponent(params.filter)}`;
+    }
+
+    return url;
+}
+
+/**
+ * Parse a book title to extract numeric range (e.g., "PARCEL 952 TO 1029" → { start: 952, end: 1029 })
+ * Handles formats: "PARCEL 952 TO 1029", "CONCESSION 3, LOT 1 TO 50", "PLAN 606"
+ * @param {string} title - The book title text
+ * @returns {Object|null} Parsed range { start, end } or null if not parseable
+ */
+export function parseBookTitleRange(title) {
+    if (!title) return null;
+
+    // Try "X TO Y" pattern (most common for register books)
+    const toMatch = title.match(/(\d+)\s+TO\s+(\d+)/i);
+    if (toMatch) {
+        return { start: parseInt(toMatch[1], 10), end: parseInt(toMatch[2], 10) };
+    }
+
+    // Try "X - Y" pattern
+    const dashMatch = title.match(/(\d+)\s*[-–]\s*(\d+)/);
+    if (dashMatch) {
+        return { start: parseInt(dashMatch[1], 10), end: parseInt(dashMatch[2], 10) };
+    }
+
+    return null;
+}
+
+/**
+ * Estimate the best starting page based on book title range and target number
+ * @param {number} target - The target parcel/section/lot number we're looking for
+ * @param {number} rangeStart - Start of the book's range
+ * @param {number} rangeEnd - End of the book's range
+ * @param {number} totalPages - Total pages in the book
+ * @returns {number} Estimated page number (1-based), clamped to valid range
+ */
+export function estimateStartPage(target, rangeStart, rangeEnd, totalPages) {
+    if (rangeStart >= rangeEnd || totalPages < 1) return Math.max(1, Math.floor(totalPages / 2));
+
+    // If target is outside the book's range, return page 1 (or indicate skip)
+    if (target < rangeStart || target > rangeEnd) return 1;
+
+    const fraction = (target - rangeStart) / (rangeEnd - rangeStart);
+    const estimated = Math.round(fraction * (totalPages - 1)) + 1;
+    return Math.max(1, Math.min(totalPages, estimated));
+}
+
+/**
  * Execute the search workflow
  * @param {string} lro - The LRO number
  * @param {string} descType - The description type
  * @param {string} descNumber - The description number
  * @param {string} [filter] - Optional filter value to append to search URL
+ * @param {string} [descType2] - Secondary search type
+ * @param {string} [descNumber2] - Secondary search value
  * @returns {Promise} Promise that resolves when search is complete
  */
-export async function executeSearch(lro, descType, descNumber, filter) {
+export async function executeSearch(lro, descType, descNumber, filter, descType2, descNumber2) {
     const webview = getWebview();
 
     // Check Onland business hours (EST) before searching
@@ -80,21 +153,22 @@ export async function executeSearch(lro, descType, descNumber, filter) {
         return;
     }
 
-    // Navigate directly to search results URL
-    let searchUrl = `https://www.onland.ca/ui/${lro}/books/search/1?lcv1=${encodeURIComponent(descNumber)}&lct1=${encodeURIComponent(descType)}&page=1`;
-    if (filter) {
-        searchUrl += `&township=${encodeURIComponent(filter)}`;
-        setState('filter', filter);
-    } else {
-        setState('filter', null);
-    }
+    // Build URL using generic builder (supports dual-search)
+    const searchUrl = buildSearchUrl({ lro, descType, descNumber, descType2, descNumber2, filter });
 
+    // Set all state fields
     setState('lro', lro);
     setState('descType', descType);
     setState('descNumber', descNumber);
+    setState('descType2', descType2 || null);
+    setState('descNumber2', descNumber2 || null);
+    setState('filter', filter || null);
     setState('totalBooks', null);
     setState('totalPages', null);
     setState('currentPage', null);
+    setState('bookTitle', null);
+    setState('bookRangeStart', null);
+    setState('bookRangeEnd', null);
     webview.src = searchUrl;
     showStatus('Loading search results...', 'info');
 
