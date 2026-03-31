@@ -177,6 +177,10 @@ const isDev = process.argv.includes('--dev');
 const portArg = process.argv.find(arg => arg.startsWith('--port='));
 const restPort = portArg ? parseInt(portArg.split('=')[1], 10) : 3001;
 
+// --debug flag enables secondary display + REST API server (listens on port)
+// When absent, no port is occupied — for production use
+const isDebug = process.argv.includes('--debug-server');
+
 let mainWindow = null;
 const boundsPath = path.join(app.getPath('userData'), 'window-bounds.json');
 const defaultBounds = { width: 1600, height: 900, x: 100, y: 0 };
@@ -220,6 +224,8 @@ function createWindow() {
 
     // Detect headless mode from command line args (--headless flag)
     const isHeadless = process.argv.includes('--headless');
+    // --show-window flag forces the UI to be visible (otherwise runs as hidden service)
+    const showWindow = process.argv.includes('--show-window');
     const isWindows = process.platform === 'win32';
 
     mainWindow = new BrowserWindow({
@@ -228,7 +234,7 @@ function createWindow() {
         minWidth: 1200,
         x: bounds.x,
         y: bounds.y,
-        show: !isHeadless,  // Hidden in headless mode
+        show: showWindow && !isHeadless,  // Hidden by default (service mode)
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
@@ -241,6 +247,8 @@ function createWindow() {
 
     if (isHeadless) {
         log('Running in headless mode (window hidden, REST API only)');
+    } else if (!showWindow) {
+        log('Running as hidden service (use --show-window to display UI)');
         // On Linux, webview may need a display. Try app.commandLine.appendSwitch as fallback.
         // On Windows, headless webview works without special setup.
         // If webview doesn't work, the app should suggest xvfb-run on Linux.
@@ -254,6 +262,16 @@ function createWindow() {
 
     mainWindow.on('closed', () => {
         mainWindow = null;
+    });
+
+    // In service mode, prevent window close from destroying it — hide instead
+    mainWindow.on('close', (event) => {
+        if (!showWindow) {
+            // Service mode: hide window, keep app alive
+            event.preventDefault();
+            mainWindow.hide();
+            log('Window closed — app continues running as background service');
+        }
     });
 
     mainWindow.on('resize', saveBounds);
@@ -456,27 +474,29 @@ app.whenReady().then(() => {
         });
     });
 
-    // Start REST API server for secondary display
-    try {
-        const server = require('./server.js');
-        server.startServer(restPort, mainWindow);
-        log('REST API server started on port ' + restPort);
-    } catch (err) {
-        log('Failed to start REST API server:', err.message);
+    // Start REST API server for secondary display (only in --debug mode)
+    if (isDebug) {
+        try {
+            const server = require('./server.js');
+            server.startServer(restPort, mainWindow);
+            log('REST API server started on port ' + restPort + ' (debug mode — secondary display at http://localhost:' + restPort + ')');
+        } catch (err) {
+            log('Failed to start REST API server:', err.message);
+        }
+    } else {
+        log('Debug mode off — secondary display server not started (use --debug-server to enable)');
     }
 });
 
 app.on('window-all-closed', () => {
+    // Service mode: don't quit — keep running in background
+    // App only quits via explicit process termination or taskkill
     // Stop REST API server
     try {
         const server = require('./server.js');
         server.stopServer();
     } catch (e) {
         // Server module may not have loaded
-    }
-
-    if (process.platform !== 'darwin') {
-        app.quit();
     }
 });
 
