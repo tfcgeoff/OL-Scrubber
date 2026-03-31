@@ -21,9 +21,12 @@ Single endpoint for all commands. Uses query parameters to determine the action.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `lro` | Yes (for search) | Land Registration Office number (e.g., `"55"`) |
-| `descType` | Yes (for search) | Description type (e.g., `"Plan"`, `"Concession"`, `"Section"`, `"Condo"`, `"Parcel"`) |
-| `descNumber` | Yes (for search) | Description number (e.g., `"606"`) |
+| `lro` | Yes (for search) | Land Registration Office number (e.g., `"55"`, `"80"`) |
+| `descType` | Yes (for search) | Primary description type: `"Concession"`, `"Plan"`, `"Section"`, `"Condo"`, `"Parcel"` |
+| `descNumber` | Yes (for search) | Primary description number (e.g., `"606"`, `"3"`, `"1000"`) |
+| `descType2` | No | Secondary search type for combined searches: `"Lot"`, `"Parklot"`, `"Parcel"`, `"Section"` |
+| `descNumber2` | No | Secondary search value (required when descType2 is set) |
+| `filter` | No | Township filter (e.g., `"CITY OF FORT WILLIAM"`, `"MCINTYRE"`, `"BLAKE"`) |
 | `incAmt` | Yes (for navigation) | Page navigation command (see below) |
 | `DL` | Yes (for download) | Set to `"true"` to download accumulated pages |
 | `nextBook` | Yes (for book nav) | Set to `"true"` to open the next book in search results |
@@ -62,29 +65,89 @@ These URLs can be typed directly into a browser, used with `curl`, or called fro
 # Search for Plan 606 in LRO 55
 GET http://localhost:3001/api?lro=55&descType=Plan&descNumber=606
 
-# Advance 5 pages forward 
-GET http://localhost:3001/api?incAmt=%2B5  
+# Search for Parcel 1000 with township filter in LRO 55
+GET http://localhost:3001/api?lro=55&descType=Parcel&descNumber=1000&filter=CITY%20OF%20FORT%20WILLIAM
 
-# Add current page to PDF and advance to next
-GET http://localhost:3001/api?incAmt=0
+# Search for Section 10 in LRO 55
+GET http://localhost:3001/api?lro=55&descType=Section&descNumber=10
 
-# Go directly to page 10
-GET http://localhost:3001/api?incAmt=10
+# Search for Section 10 with township MCINTYRE in LRO 55
+GET http://localhost:3001/api?lro=55&descType=Section&descNumber=10&filter=MCINTYRE
 
-# Jump to 75% mark of remaining pages
-GET http://localhost:3001/api?incAmt=75%25
+# Combined search: Section 10 + Parcel 10 in LRO 55
+GET http://localhost:3001/api?lro=55&descType=Section&descNumber=10&descType2=Parcel&descNumber2=10
+
+# Search for Concession 3 in LRO 55
+GET http://localhost:3001/api?lro=55&descType=Concession&descNumber=3
+
+# Search for Concession 3 with township BLAKE in LRO 55
+GET http://localhost:3001/api?lro=55&descType=Concession&descNumber=3&filter=BLAKE
+
+# Combined search: Concession 3 + Lot 1 in LRO 55
+GET http://localhost:3001/api?lro=55&descType=Concession&descNumber=3&descType2=Lot&descNumber2=1
+
+# Combined search: Concession 3 + Lot 1 with township PAIPOONGE in LRO 55
+GET http://localhost:3001/api?lro=55&descType=Concession&descNumber=3&descType2=Lot&descNumber2=1&filter=PAIPOONGE
+
+# Combined search: Concession 1 + Parklot 1 in LRO 80
+GET http://localhost:3001/api?lro=80&descType=Concession&descNumber=1&descType2=Parklot&descNumber2=1
+
+# Advance 5 pages forward
+GET http://localhost:3001/api?incAmt=%2B5
 
 # Go back 3 pages
 GET http://localhost:3001/api?incAmt=-3
 
-# Download accumulated PDF
-GET http://localhost:3001/api?DL=true
+# Jump to 50% of remaining pages
+GET http://localhost:3001/api?incAmt=50%25
 
-# Confirm download and delete PDF from disk - Will also cancel the search and delete accumulated books
-GET http://localhost:3001/api?confirm=true
+# Go directly to page 200
+GET http://localhost:3001/api?incAmt=200
+
+# Add current page to PDF and advance to next
+GET http://localhost:3001/api?incAmt=0
 
 # Open next book in search results
 GET http://localhost:3001/api?nextBook=true
+
+# Open last book in search results
+GET http://localhost:3001/api?lastBook=true
+
+# Download accumulated PDF
+GET http://localhost:3001/api?DL=true
+
+# Download accumulated PDF and confirm (delete server copy)
+GET http://localhost:3001/api?DL=true&confirm=true
+```
+
+### Headless Mode (API-only, no UI)
+
+The app can run headlessly with `--headless` flag. This hides the Electron window but keeps the REST API and webview fully functional. Ideal for automation pipelines.
+
+```bash
+# Windows (natively headless)
+ol-scrubber.exe --headless --port 3001
+
+# Linux (uses xvfb-run for virtual display if needed)
+xvfb-run --auto-servernum npx electron . --headless --port 3001
+```
+
+In headless mode:
+- The Electron window is created hidden (`show: false`)
+- The REST API (`/api`, `/api/status`) works exactly the same
+- The webview still loads onland.ca and performs all searches/page navigation
+- Screenshots are still captured and returned via the API
+- No GUI is shown — all interaction is through HTTP requests
+
+### Smart Page Estimation
+
+When opening a book, the app scrapes the book title for a numeric range (e.g., "PARCEL 952 TO 1029"). If found, it estimates the best starting page based on the target number:
+
+```
+estimated_page = round((target - rangeStart) / (rangeEnd - rangeStart) * (totalPages - 1)) + 1
+```
+
+This significantly reduces the number of page jumps and OCR inferences compared to the previous blind 50% approach. If no range is found in the book title, it falls back to 50%.
 
 ```
 
