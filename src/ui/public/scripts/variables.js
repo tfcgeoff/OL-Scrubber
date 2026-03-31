@@ -19,7 +19,8 @@ const state = {
     transactionId: null,    // e.g. "34122282" (extracted from page API URL)
     bookTitle: null,       // Scraped book title (e.g., "PARCEL 952 TO 1029")
     bookRangeStart: null,  // Parsed start of book range (e.g., 952)
-    bookRangeEnd: null     // Parsed end of book range (e.g., 1029)
+    bookRangeEnd: null,    // Parsed end of book range (e.g., 1029)
+    searchUrl: null        // Stored search URL from buildSearchUrl (avoids double-encoding)
 };
 
 export function setState(key, value) {

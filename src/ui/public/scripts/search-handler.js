@@ -117,11 +117,14 @@ export function parseBookTitleRange(title) {
 export function estimateStartPage(target, rangeStart, rangeEnd, totalPages) {
     if (rangeStart >= rangeEnd || totalPages < 1) return Math.max(1, Math.floor(totalPages / 2));
 
-    // If target is outside the book's range, return page 1 (or indicate skip)
+    // Inclusive range: 884 to 1082 = 199 parcels, not 198
+    const numParcels = rangeEnd - rangeStart + 1;
+    // If target is outside the book's range, return page 1
     if (target < rangeStart || target > rangeEnd) return 1;
 
-    const fraction = (target - rangeStart) / (rangeEnd - rangeStart);
-    const estimated = Math.round(fraction * (totalPages - 1)) + 1;
+    // Linear interpolation: pages per parcel * offset from start
+    const offset = target - rangeStart;
+    const estimated = Math.round(offset * totalPages / numParcels) + 1;
     return Math.max(1, Math.min(totalPages, estimated));
 }
 
@@ -169,6 +172,7 @@ export async function executeSearch(lro, descType, descNumber, filter, descType2
     setState('bookTitle', null);
     setState('bookRangeStart', null);
     setState('bookRangeEnd', null);
+    setState('searchUrl', searchUrl);
     webview.src = searchUrl;
     showStatus('Loading search results...', 'info');
 

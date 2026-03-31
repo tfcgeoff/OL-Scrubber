@@ -91,7 +91,7 @@
         import { setupDownloadHandler } from './scripts/download-handler.js';
         import { pollForPageCount } from './scripts/page-navigator.js';
         import { captureScreenshot, installFetchInterceptor } from './scripts/screenshot.js';
-        import { getState } from './scripts/variables.js';
+        import { getState, setState } from './scripts/variables.js';
 
         // Get DOM elements
         const webview = document.getElementById('onlandWebview');
@@ -161,20 +161,37 @@
                 const webview = getWebview();
                 if (!webview) return;
 
-                const lro = getState('lro');
-                const descType = getState('descType');
-                const descNumber = getState('descNumber');
+                // Use stored search URL (avoids double-encoding)
+                const searchUrl = getState('searchUrl');
+                if (!searchUrl) {
+                    addLog('error', 'No search URL in state — perform a search first');
+                    if (window.electronAPI && window.electronAPI.pushScreenshot) {
+                        window.electronAPI.pushScreenshot(null);
+                    }
+                    return;
+                }
+
+                const totalBooks = getState('totalBooks') || 0;
                 const currentBook = (getState('currentBook') || 1) + 1;
 
-                // Navigate back to search results
-                const searchUrl = `https://www.onland.ca/ui/${lro}/books/search/1?lcv1=${encodeURIComponent(descNumber)}&lct1=${encodeURIComponent(descType)}&page=1`;
-                webview.src = searchUrl;
+                if (currentBook > totalBooks) {
+                    addLog('warning', 'No more books (' + currentBook + ' > ' + totalBooks + ')');
+                    if (window.electronAPI && window.electronAPI.pushScreenshot) {
+                        window.electronAPI.pushScreenshot(null);
+                    }
+                    return;
+                }
+
                 setState('currentBook', currentBook);
+                addLog('info', 'Navigating to search URL for book ' + currentBook);
 
-                webview.addEventListener('dom-ready', function onReady() {
-                    webview.removeEventListener('dom-ready', onReady);
+                // Navigate within the SPA using executeJavaScript (avoids loadURL issues)
+                webview.executeJavaScript(`window.location.href = ${JSON.stringify(searchUrl)}`).then(() => {
+                    // Wait for the SPA to load search results, then poll for View Details buttons
+                    let polls = 0;
+                    const maxPolls = 30;
+                    const pollInterval = 1000;
 
-                    // Wait for results, then click the next View Details button
                     const waitForResults = () => {
                         webview.executeJavaScript(`
                             (() => {
@@ -182,25 +199,23 @@
                                 return { count: viewBtns.length };
                             })()
                         `).then(result => {
-                            if (result.count >= currentBook) {
+                            if (result && result.count >= currentBook) {
                                 addLog('info', 'Opening book ' + currentBook);
                                 webview.executeJavaScript(`
                                     (() => {
                                         const btns = document.querySelectorAll('button[aria-label*="View Details"]');
-                                        if (btns[currentBook - 1]) {
-                                            btns[currentBook - 1].click();
+                                        if (btns[${currentBook - 1}]) {
+                                            btns[${currentBook - 1}].click();
                                             return { clicked: true };
                                         }
                                         return { clicked: false };
                                     })()
                                 `).then(clickResult => {
-                                    if (clickResult.clicked) {
-                                        // Install fetch interceptor before book viewer loads
+                                    if (clickResult && clickResult.clicked) {
                                         installFetchInterceptor(webview);
-                                        // Wait for book page, detect page count, screenshot
                                         const waitForBookPage = () => {
-                                            webview.executeJavaScript(`window.location.href`).then(url => {
-                                                if (!url.includes('/search')) {
+                                            webview.executeJavaScript('window.location.href').then(url => {
+                                                if (url && !url.includes('/search')) {
                                                     pollForPageCount(webview, () => {
                                                         captureScreenshot(webview, (data) => {
                                                             if (data) addLog('info', 'Screenshot captured for book ' + currentBook);
@@ -209,17 +224,50 @@
                                                 } else {
                                                     setTimeout(waitForBookPage, 500);
                                                 }
-                                            });
+                                            }).catch(() => setTimeout(waitForBookPage, 500));
                                         };
                                         waitForBookPage();
+                                    } else {
+                                        addLog('error', 'View Details button disappeared');
+                                        if (window.electronAPI && window.electronAPI.pushScreenshot) {
+                                            window.electronAPI.pushScreenshot(null);
+                                        }
+                                    }
+                                }).catch(err => {
+                                    addLog('error', 'Click View Details failed: ' + err.message);
+                                    if (window.electronAPI && window.electronAPI.pushScreenshot) {
+                                        window.electronAPI.pushScreenshot(null);
                                     }
                                 });
+                            } else if (polls < maxPolls) {
+                                polls++;
+                                setTimeout(waitForResults, pollInterval);
                             } else {
-                                addLog('warning', 'No more books in results');
+                                addLog('error', 'Timed out waiting for search results for next book');
+                                if (window.electronAPI && window.electronAPI.pushScreenshot) {
+                                    window.electronAPI.pushScreenshot(null);
+                                }
+                            }
+                        }).catch(err => {
+                            addLog('warning', 'Results poll error (retrying): ' + (err.message || err));
+                            if (polls < maxPolls) {
+                                polls++;
+                                setTimeout(waitForResults, pollInterval);
+                            } else {
+                                addLog('error', 'Timed out waiting for search results for next book (poll errors)');
+                                if (window.electronAPI && window.electronAPI.pushScreenshot) {
+                                    window.electronAPI.pushScreenshot(null);
+                                }
                             }
                         });
                     };
-                    setTimeout(waitForResults, 1000);
+                    // Give the SPA time to navigate and render search results
+                    setTimeout(waitForResults, 3000);
+                }).catch(err => {
+                    addLog('error', 'Failed to navigate to search URL: ' + (err.message || err));
+                    if (window.electronAPI && window.electronAPI.pushScreenshot) {
+                        window.electronAPI.pushScreenshot(null);
+                    }
                 });
             });
         }
@@ -231,27 +279,36 @@
                 const webview = getWebview();
                 if (!webview) return;
 
-                const lro = getState('lro');
-                const descType = getState('descType');
-                const descNumber = getState('descNumber');
-                const totalBooks = getState('totalBooks');
+                // Use stored search URL (avoids double-encoding)
+                const searchUrl = getState('searchUrl');
+                if (!searchUrl) {
+                    addLog('error', 'No search URL in state — perform a search first');
+                    if (window.electronAPI && window.electronAPI.pushScreenshot) {
+                        window.electronAPI.pushScreenshot(null);
+                    }
+                    return;
+                }
 
+                const totalBooks = getState('totalBooks');
                 if (!totalBooks) {
-                    addLog('warning', 'No total books count available');
+                    addLog('error', 'No total books count available — perform a search first');
+                    if (window.electronAPI && window.electronAPI.pushScreenshot) {
+                        window.electronAPI.pushScreenshot(null);
+                    }
                     return;
                 }
 
                 const currentBook = totalBooks;
                 setState('currentBook', currentBook);
+                addLog('info', 'Navigating to search URL for last book (' + currentBook + ')');
 
-                // Navigate back to search results
-                const searchUrl = `https://www.onland.ca/ui/${lro}/books/search/1?lcv1=${encodeURIComponent(descNumber)}&lct1=${encodeURIComponent(descType)}&page=1`;
-                webview.src = searchUrl;
+                // Navigate within the SPA using executeJavaScript (avoids loadURL issues)
+                webview.executeJavaScript(`window.location.href = ${JSON.stringify(searchUrl)}`).then(() => {
+                    // Wait for the SPA to load search results, then poll for View Details buttons
+                    let polls = 0;
+                    const maxPolls = 30;
+                    const pollInterval = 1000;
 
-                webview.addEventListener('dom-ready', function onReady() {
-                    webview.removeEventListener('dom-ready', onReady);
-
-                    // Wait for results, then click the last View Details button
                     const waitForResults = () => {
                         webview.executeJavaScript(`
                             (() => {
@@ -259,25 +316,23 @@
                                 return { count: viewBtns.length };
                             })()
                         `).then(result => {
-                            if (result.count >= currentBook) {
+                            if (result && result.count >= currentBook) {
                                 addLog('info', 'Opening last book (' + currentBook + ')');
                                 webview.executeJavaScript(`
                                     (() => {
                                         const btns = document.querySelectorAll('button[aria-label*="View Details"]');
-                                        if (btns[currentBook - 1]) {
-                                            btns[currentBook - 1].click();
+                                        if (btns[${currentBook - 1}]) {
+                                            btns[${currentBook - 1}].click();
                                             return { clicked: true };
                                         }
                                         return { clicked: false };
                                     })()
                                 `).then(clickResult => {
-                                    if (clickResult.clicked) {
-                                        // Install fetch interceptor before book viewer loads
+                                    if (clickResult && clickResult.clicked) {
                                         installFetchInterceptor(webview);
-                                        // Wait for book page, detect page count, screenshot
                                         const waitForBookPage = () => {
-                                            webview.executeJavaScript(`window.location.href`).then(url => {
-                                                if (!url.includes('/search')) {
+                                            webview.executeJavaScript('window.location.href').then(url => {
+                                                if (url && !url.includes('/search')) {
                                                     pollForPageCount(webview, () => {
                                                         captureScreenshot(webview, (data) => {
                                                             if (data) addLog('info', 'Screenshot captured for book ' + currentBook);
@@ -286,17 +341,50 @@
                                                 } else {
                                                     setTimeout(waitForBookPage, 500);
                                                 }
-                                            });
+                                            }).catch(() => setTimeout(waitForBookPage, 500));
                                         };
                                         waitForBookPage();
+                                    } else {
+                                        addLog('error', 'View Details button disappeared');
+                                        if (window.electronAPI && window.electronAPI.pushScreenshot) {
+                                            window.electronAPI.pushScreenshot(null);
+                                        }
+                                    }
+                                }).catch(err => {
+                                    addLog('error', 'Click View Details failed: ' + err.message);
+                                    if (window.electronAPI && window.electronAPI.pushScreenshot) {
+                                        window.electronAPI.pushScreenshot(null);
                                     }
                                 });
+                            } else if (polls < maxPolls) {
+                                polls++;
+                                setTimeout(waitForResults, pollInterval);
                             } else {
-                                addLog('warning', 'Not enough books in results for last book');
+                                addLog('error', 'Timed out waiting for search results for last book');
+                                if (window.electronAPI && window.electronAPI.pushScreenshot) {
+                                    window.electronAPI.pushScreenshot(null);
+                                }
+                            }
+                        }).catch(err => {
+                            addLog('warning', 'Results poll error (retrying): ' + (err.message || err));
+                            if (polls < maxPolls) {
+                                polls++;
+                                setTimeout(waitForResults, pollInterval);
+                            } else {
+                                addLog('error', 'Timed out waiting for search results for last book (poll errors)');
+                                if (window.electronAPI && window.electronAPI.pushScreenshot) {
+                                    window.electronAPI.pushScreenshot(null);
+                                }
                             }
                         });
                     };
-                    setTimeout(waitForResults, 1000);
+                    // Give the SPA time to navigate and render search results
+                    setTimeout(waitForResults, 3000);
+                }).catch(err => {
+                    addLog('error', 'Failed to navigate to search URL: ' + (err.message || err));
+                    if (window.electronAPI && window.electronAPI.pushScreenshot) {
+                        window.electronAPI.pushScreenshot(null);
+                    }
                 });
             });
         }
