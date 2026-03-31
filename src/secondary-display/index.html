@@ -107,6 +107,32 @@
             font-size: 14px;
         }
 
+        /* State bar */
+        .state-bar {
+            background: #1a1a3e;
+            padding: 6px 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            border-bottom: 1px solid #0f3460;
+            font-size: 13px;
+            flex-wrap: wrap;
+        }
+        .state-bar .label {
+            color: #888;
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 0.5px;
+        }
+        .state-bar .value {
+            color: #e0e0e0;
+            font-weight: 600;
+        }
+        .state-bar .no-results {
+            color: #fca5a5;
+            font-weight: 600;
+        }
+
         /* Bottom controls */
         .controls {
             background: #16213e;
@@ -211,6 +237,13 @@
         <button class="btn btn-primary" id="navSendBtn">Go</button>
     </div>
 
+    <!-- State Bar -->
+    <div class="state-bar" id="stateBar" style="display: none;">
+        <div><span class="label">Page </span><span class="value" id="statePage">-</span><span class="label"> / </span><span class="value" id="stateTotalPages">-</span></div>
+        <div><span class="label">Book </span><span class="value" id="stateBook">-</span><span class="label"> / </span><span class="value" id="stateTotalBooks">-</span></div>
+        <div id="stateSearchInfo" style="color: #888; font-size: 12px;"></div>
+    </div>
+
     <!-- Screenshot -->
     <div class="screenshot-container" id="screenshotContainer">
         <span class="screenshot-placeholder" id="placeholder">Waiting for screenshot...</span>
@@ -229,6 +262,30 @@
         const searchDescType = document.getElementById('searchDescType');
         const searchDescNum = document.getElementById('searchDescNum');
         const searchFilter = document.getElementById('searchFilter');
+
+        // ---- Update state bar ----
+        const stateBar = document.getElementById('stateBar');
+        const statePage = document.getElementById('statePage');
+        const stateTotalPages = document.getElementById('stateTotalPages');
+        const stateBook = document.getElementById('stateBook');
+        const stateTotalBooks = document.getElementById('stateTotalBooks');
+        const stateSearchInfo = document.getElementById('stateSearchInfo');
+
+        function updateStateBar(state) {
+            stateBar.style.display = 'flex';
+            statePage.textContent = state.currentPage || '-';
+            stateTotalPages.textContent = state.totalPages || '-';
+            stateBook.textContent = state.currentBook || '-';
+            stateTotalBooks.textContent = state.totalBooks || '-';
+
+            // Show search info
+            const parts = [];
+            if (state.lro) parts.push('LRO ' + state.lro);
+            if (state.descType && state.descNumber) parts.push(state.descType + ' ' + state.descNumber);
+            if (state.descType2 && state.descNumber2) parts.push('+ ' + state.descType2 + ' ' + state.descNumber2);
+            if (state.filter) parts.push('Filter: ' + state.filter);
+            stateSearchInfo.textContent = parts.join(' | ');
+        }
 
         // ---- Display screenshot from base64 ----
         function showScreenshot(base64) {
@@ -267,8 +324,19 @@
                 })
                 .then(data => {
                     connectionStatus.style.display = 'none';
+                    updateStateBar(data.state || {});
                     if (data.screenshot) {
                         showScreenshot(data.screenshot);
+                    } else if (data.state && data.state.totalBooks === 0) {
+                        placeholder.textContent = 'No results found';
+                        placeholder.style.display = 'block';
+                        screenshotImg.style.display = 'none';
+                        screenshotPdf.style.display = 'none';
+                    } else if (!data.screenshot && !data.pdf) {
+                        placeholder.textContent = data.timeout ? 'Request timed out' : 'No image returned';
+                        placeholder.style.display = 'block';
+                        screenshotImg.style.display = 'none';
+                        screenshotPdf.style.display = 'none';
                     }
                     if (data.pdf) {
                         // Handle PDF download response

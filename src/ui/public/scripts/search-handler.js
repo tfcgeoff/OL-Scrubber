@@ -251,9 +251,19 @@ function waitForResults(webview) {
             } else if (result.status === 'server-error') {
                 addLog('error', 'Server error: unable to perform request');
                 showStatus('Server error - try again later', 'error');
+                // Push null screenshot to resolve any pending API request
+                if (window.electronAPI && window.electronAPI.pushScreenshot) {
+                    window.electronAPI.pushScreenshot(null);
+                }
             } else if (result.status === 'no-results') {
                 addLog('warning', 'No results found for search');
                 showStatus('No results found', 'warning');
+                // Set totalBooks to 0 so API caller knows there are no results
+                setState('totalBooks', 0);
+                // Push null screenshot to resolve any pending API request
+                if (window.electronAPI && window.electronAPI.pushScreenshot) {
+                    window.electronAPI.pushScreenshot(null);
+                }
             } else if (polls < SEARCH_FORM_MAX_POLLS) {
                 polls++;
                 setTimeout(poll, SEARCH_FORM_POLL_INTERVAL);

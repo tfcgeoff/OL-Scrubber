@@ -43,8 +43,8 @@ let pendingTimeout = null;
 // Fields that are internal to the renderer and should not be exposed in API responses
 const INTERNAL_STATE_KEYS = ['pageApiBaseUrl', 'transactionId', 'bookTitle', 'bookRangeStart', 'bookRangeEnd'];
 
-// Timeout for screenshot capture (10s max — reduced from 20s)
-const CAPTURE_TIMEOUT = 10000;
+// Timeout for screenshot capture (30s — full flow: search → results → book → page → capture)
+const CAPTURE_TIMEOUT = 30000;
 
 /**
  * Return a copy of currentState with internal implementation details stripped out

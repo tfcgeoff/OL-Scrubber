@@ -234,7 +234,7 @@ function createWindow() {
         minWidth: 1200,
         x: bounds.x,
         y: bounds.y,
-        show: showWindow && !isHeadless,  // Hidden by default (service mode)
+        show: false,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
@@ -245,13 +245,20 @@ function createWindow() {
         }
     });
 
-    if (isHeadless) {
-        log('Running in headless mode (window hidden, REST API only)');
-    } else if (!showWindow) {
-        log('Running as hidden service (use --show-window to display UI)');
-        // On Linux, webview may need a display. Try app.commandLine.appendSwitch as fallback.
-        // On Windows, headless webview works without special setup.
-        // If webview doesn't work, the app should suggest xvfb-run on Linux.
+    if (showWindow) {
+        mainWindow.show();
+        log('Running with visible UI');
+    } else {
+        // Hidden service mode
+        // On Windows: show:false works, webview renders fine without display
+        // On Linux: webview requires window to be visible (use --show-window or xvfb-run)
+        if (isWindows) {
+            log('Running as hidden service (Windows — webview works without display)');
+        } else {
+            mainWindow.show();
+            mainWindow.setSkipTaskbar(true);
+            log('Running as hidden service (Linux — window visible but minimized from taskbar, use xvfb-run for true headless)');
+        }
     }
 
     mainWindow.loadFile(path.join(__dirname, 'src', 'ui', 'public', 'index.html'));
