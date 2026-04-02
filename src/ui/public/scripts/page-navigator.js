@@ -136,7 +136,7 @@ export function pollForPageCount(webview, onScreenshotReady) {
                 // DEBUG: Probe for page API (temporary)
                 probePDFjs(webview);
 
-                // Scrape the book title from the page for smart page estimation
+                // Scrape the book title from the page
                 scrapeBookTitle(webview);
 
                 // Calculate best starting page using book range if available,
@@ -232,49 +232,28 @@ export function navigateToPage(webview, pageNumber) {
  * @param {HTMLElement} webview - The webview element
  */
 function scrapeBookTitle(webview) {
-    webview.executeJavaScript(`
+    return webview.executeJavaScript(`
         (() => {
-            // Try multiple selectors to find the book title
-            const selectors = [
-                'h1', 'h2', 'h3',
-                '[class*="title"]',
-                '[class*="header"]',
-                '[class*="book-title"]',
-                '[class*="book-title"]'
-            ];
-
-            for (const sel of selectors) {
-                const elements = document.querySelectorAll(sel);
-                for (const el of elements) {
-                    const text = (el.textContent || el.innerText || '').trim();
-                    // Look for range patterns in the title (e.g., "PARCEL 952 TO 1029")
-                    if (text.match(/\d+\s+(TO|to|–|-)\s+\d+/)) {
-                        return { found: true, title: text, selector: sel };
-                    }
+            const summary = document.querySelector('book-summary');
+            if (summary) {
+                const header = summary.querySelector('p.header');
+                const desc = summary.querySelector('#descField');
+                const parts = [];
+                if (header) parts.push(header.textContent.trim());
+                if (desc) parts.push(desc.textContent.trim());
+                if (parts.length > 0) {
+                    return { found: true, title: parts.join(', '), header: parts[0], desc: parts[1] || null };
                 }
             }
-
-            // Fallback: check the page URL or any meta/title tags
-            const pageTitle = document.title || '';
-            return { found: false, title: pageTitle, meta: document.querySelector('meta[property="og:title"]')?.content || null };
+            return { found: false, title: document.title || '' };
         })()
     `).then(result => {
         if (result.found) {
-            setState('bookTitle', result.title);
-            const range = parseBookTitleRange(result.title);
-            if (range) {
-                setState('bookRangeStart', range.start);
-                setState('bookRangeEnd', range.end);
-                addLog('info', 'Book title scraped', {
-                    title: result.title,
-                    rangeStart: range.start,
-                    rangeEnd: range.end
-                });
-            } else {
-                addLog('info', 'Book title found but range not parseable', { title: result.title });
-            }
+            setState('bookTitle', result.header);
+            if (result.desc) setState('bookField', result.desc);
+            addLog('info', 'Book title scraped', { title: result.title });
         } else {
-            addLog('info', 'No book title with range found', { pageTitle: result.title });
+            addLog('info', 'No book-summary element found', { pageTitle: result.title });
         }
     }).catch(err => {
         addLog('error', 'Book title scrape failed: ' + (err.message || String(err)));

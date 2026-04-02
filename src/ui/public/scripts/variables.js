@@ -17,7 +17,8 @@ const state = {
     pagesSelected: 0,
     pageApiBaseUrl: null,  // e.g. "https://www.onland.ca/api/v1/books/transactions/34122282/pages" (set by main process)
     transactionId: null,    // e.g. "34122282" (extracted from page API URL)
-    bookTitle: null,       // Scraped book title (e.g., "PARCEL 952 TO 1029")
+    bookTitle: null,       // Scraped book header (e.g., "THUNDER BAY (55), MCINTYRE, Book 7")
+    bookField: null,       // Scraped book description (e.g., "PLAN 606, 608, 624, 625")
     bookRangeStart: null,  // Parsed start of book range (e.g., 952)
     bookRangeEnd: null,    // Parsed end of book range (e.g., 1029)
     searchUrl: null        // Stored search URL from buildSearchUrl (avoids double-encoding)
