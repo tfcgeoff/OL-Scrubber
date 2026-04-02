@@ -177,9 +177,9 @@ const isDev = process.argv.includes('--dev');
 const portArg = process.argv.find(arg => arg.startsWith('--port='));
 const restPort = portArg ? parseInt(portArg.split('=')[1], 10) : 3001;
 
-// --debug flag enables secondary display + REST API server (listens on port)
+// --debug-server / --useTest flags enable secondary display + REST API server (listens on port)
 // When absent, no port is occupied — for production use
-const isDebug = process.argv.includes('--debug-server');
+const isDebug = process.argv.includes('--debug-server') || process.argv.includes('--useTest');
 
 let mainWindow = null;
 const boundsPath = path.join(app.getPath('userData'), 'window-bounds.json');
@@ -225,15 +225,15 @@ function createWindow() {
     // Detect headless mode from command line args (--headless flag)
     const isHeadless = process.argv.includes('--headless');
     // --show-window flag forces the UI to be visible (otherwise runs as hidden service)
-    const showWindow = process.argv.includes('--show-window');
+    const showWindow = false;//process.argv.includes('--show-window');
     const isWindows = process.platform === 'win32';
 
     mainWindow = new BrowserWindow({
-        width: bounds.width,
-        height: bounds.height,
-        minWidth: 1200,
-        x: bounds.x,
-        y: bounds.y,
+        width: 0,//bounds.width,
+        height: 0,//bounds.height,
+        minWidth: 0,//1200,
+        x: 0,//bounds.x,
+        y: 0,//bounds.y,
         show: false,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
@@ -491,7 +491,7 @@ app.whenReady().then(() => {
             log('Failed to start REST API server:', err.message);
         }
     } else {
-        log('Debug mode off — secondary display server not started (use --debug-server to enable)');
+        log('Debug mode off — secondary display server not started (use --debug-server or --useTest to enable)');
     }
 });
 
@@ -643,18 +643,24 @@ ipcMain.handle('page:fetch', async (event, { pageNumber }) => {
                     const text = buffer.toString();
                     let pageData;
 
-                    // Same logic as CDP path — extract from JSON if needed
-                    if (contentType.includes('json') || contentType.includes('text')) {
-                        try {
-                            const json = JSON.parse(text);
-                            pageData = json.content || json.image || text;
-                            log('PAGE FETCH: JSON response, extracted content field');
-                        } catch (e) {
+                    // Always try JSON extraction — Onland API sometimes returns JSON
+                    // with content-type application/octet-stream
+                    try {
+                        const json = JSON.parse(text);
+                        if (json.content) {
+                            pageData = json.content;
+                            log('PAGE FETCH: JSON response, extracted content field (contentType: ' + contentType + ')');
+                        } else if (json.image) {
+                            pageData = json.image;
+                            log('PAGE FETCH: JSON response, extracted image field');
+                        } else {
                             pageData = buffer.toString('base64');
-                            log('PAGE FETCH: Text response, not JSON, encoded as base64');
+                            log('PAGE FETCH: JSON response but no content/image field, encoded as base64');
                         }
-                    } else {
+                    } catch (e) {
+                        // Not JSON — raw binary (PNG, PDF, etc.)
                         pageData = buffer.toString('base64');
+                        log('PAGE FETCH: Binary response, encoded as base64 (contentType: ' + contentType + ')');
                     }
 
                     try {

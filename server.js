@@ -1,19 +1,20 @@
 /**
  * REST API Server - Single endpoint for all commands
  *
- * GET / - serves secondary display HTML
- * GET /api - sends command to Electron, waits for screenshot, returns JSON:
- *          { screenshot: "base64...", state: { lro, descType, ... } }
+ * GET /              - serves secondary display HTML
+ * GET /api/status    - health check (returns connection status + public state)
+ * GET /api           - sends command via query parameters, waits for screenshot, returns JSON
+ * POST /api          - sends command via JSON body, waits for screenshot, returns JSON
  *
- * Query params:
+ * Parameters (GET as query params, POST as JSON body):
  *   lro, descType, descNumber     - trigger a search (also deletes any accumulated PDF)
  *   descType2, descNumber2       - optional secondary search (e.g., Lot, Parklot with Concession)
  *   filter                       - optional township filter
  *   incAmt  (+5, -3, 50%, 0)      - navigate pages (0 = add current page + PDF capture)
- *   DL=true                      - return accumulated combined PDF as base64 in response
- *   confirm=true                 - delete accumulated PDF after confirmed download
- *   nextBook=true                - open next book in search results
- *   lastBook=true                - open last book in search results
+ *   DL (boolean)                 - return accumulated combined PDF as base64 in response
+ *   confirm (boolean)            - delete accumulated PDF after confirmed download
+ *   nextBook (boolean)           - open next book in search results
+ *   prevBook (boolean)           - open previous book in search results
  */
 
 const express = require('express');
@@ -35,13 +36,13 @@ try {
 // Current state
 let currentState = {};
 
-// Pending promise resolver - the GET /api handler creates a promise,
+// Pending promise resolver - the handler creates a promise,
 // updateScreenshot() resolves it when the renderer captures
 let pendingResolve = null;
 let pendingTimeout = null;
 
 // Fields that are internal to the renderer and should not be exposed in API responses
-const INTERNAL_STATE_KEYS = ['pageApiBaseUrl', 'transactionId', 'bookTitle', 'bookRangeStart', 'bookRangeEnd', 'searchUrl'];
+const INTERNAL_STATE_KEYS = ['pageApiBaseUrl', 'transactionId', 'bookRangeStart', 'bookRangeEnd', 'searchUrl'];
 
 // Timeout for screenshot capture (30s — full flow: search → results → book → page → capture)
 const CAPTURE_TIMEOUT = 30000;
@@ -80,12 +81,16 @@ app.get('/', (req, res) => {
     }
 });
 
-// Single API endpoint - forwards command, waits for screenshot, returns JSON
-app.get('/api', (req, res) => {
-    const { lro, descType, descNumber, descType2, descNumber2, filter, incAmt, DL, confirm, nextBook, lastBook } = req.query;
+/**
+ * Core API handler — shared by GET and POST /api
+ * @param {Object} params - Command parameters (lro, descType, descNumber, incAmt, DL, confirm, nextBook, prevBook, etc.)
+ * @param {Object} res - Express response object
+ */
+function handleApiCommand(params, res) {
+    const { lro, descType, descNumber, descType2, descNumber2, filter, incAmt, DL, confirm, nextBook, prevBook } = params;
 
     // Must have some action
-    if (!lro && !incAmt && !DL && !confirm && !nextBook && !lastBook) {
+    if (!lro && !incAmt && !DL && !confirm && !nextBook && !prevBook) {
         res.status(400).json({ error: 'No action specified' });
         return;
     }
@@ -192,7 +197,7 @@ app.get('/api', (req, res) => {
 
     // Forward nav command
     if (incAmt) {
-        mainWindow.webContents.send('nav:execute', incAmt);
+        mainWindow.webContents.send('nav:execute', String(incAmt));
     }
 
     // Forward download command (only if not already handled above as PDF download)
@@ -205,9 +210,9 @@ app.get('/api', (req, res) => {
         mainWindow.webContents.send('next-book:execute', {});
     }
 
-    // Forward last book command
-    if (lastBook) {
-        mainWindow.webContents.send('last-book:execute', {});
+    // Forward prev book command
+    if (prevBook) {
+        mainWindow.webContents.send('prev-book:execute', {});
     }
 
     // Wait for screenshot (resolved by updateScreenshot) or timeout
@@ -219,6 +224,20 @@ app.get('/api', (req, res) => {
         }
         res.json(data);
     });
+}
+
+// GET /api - command via query parameters
+app.get('/api', (req, res) => {
+    handleApiCommand(req.query, res);
+});
+
+// POST /api - command via JSON body
+app.post('/api', (req, res) => {
+    if (!req.body || typeof req.body !== 'object') {
+        res.status(400).json({ error: 'Request body must be JSON object' });
+        return;
+    }
+    handleApiCommand(req.body, res);
 });
 
 /**

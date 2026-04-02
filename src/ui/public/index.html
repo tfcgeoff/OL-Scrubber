@@ -272,10 +272,10 @@
             });
         }
 
-        // Listen for last-book command from REST API
-        if (window.electronAPI && window.electronAPI.onLastBookCommand) {
-            window.electronAPI.onLastBookCommand(() => {
-                addLog('info', 'Last book command from secondary display');
+        // Listen for prev-book command from REST API
+        if (window.electronAPI && window.electronAPI.onPrevBookCommand) {
+            window.electronAPI.onPrevBookCommand(() => {
+                addLog('info', 'Prev book command from secondary display');
                 const webview = getWebview();
                 if (!webview) return;
 
@@ -289,18 +289,18 @@
                     return;
                 }
 
-                const totalBooks = getState('totalBooks');
-                if (!totalBooks) {
-                    addLog('error', 'No total books count available — perform a search first');
+                const currentBook = (getState('currentBook') || 1) - 1;
+
+                if (currentBook < 1) {
+                    addLog('warning', 'Already on first book (' + (currentBook + 1) + ')');
                     if (window.electronAPI && window.electronAPI.pushScreenshot) {
                         window.electronAPI.pushScreenshot(null);
                     }
                     return;
                 }
 
-                const currentBook = totalBooks;
                 setState('currentBook', currentBook);
-                addLog('info', 'Navigating to search URL for last book (' + currentBook + ')');
+                addLog('info', 'Navigating to search URL for book ' + currentBook);
 
                 // Navigate within the SPA using executeJavaScript (avoids loadURL issues)
                 webview.executeJavaScript(`window.location.href = ${JSON.stringify(searchUrl)}`).then(() => {
@@ -317,7 +317,7 @@
                             })()
                         `).then(result => {
                             if (result && result.count >= currentBook) {
-                                addLog('info', 'Opening last book (' + currentBook + ')');
+                                addLog('info', 'Opening book ' + currentBook);
                                 webview.executeJavaScript(`
                                     (() => {
                                         const btns = document.querySelectorAll('button[aria-label*="View Details"]');
@@ -360,7 +360,7 @@
                                 polls++;
                                 setTimeout(waitForResults, pollInterval);
                             } else {
-                                addLog('error', 'Timed out waiting for search results for last book');
+                                addLog('error', 'Timed out waiting for search results for prev book');
                                 if (window.electronAPI && window.electronAPI.pushScreenshot) {
                                     window.electronAPI.pushScreenshot(null);
                                 }
@@ -371,7 +371,7 @@
                                 polls++;
                                 setTimeout(waitForResults, pollInterval);
                             } else {
-                                addLog('error', 'Timed out waiting for search results for last book (poll errors)');
+                                addLog('error', 'Timed out waiting for search results for prev book (poll errors)');
                                 if (window.electronAPI && window.electronAPI.pushScreenshot) {
                                     window.electronAPI.pushScreenshot(null);
                                 }

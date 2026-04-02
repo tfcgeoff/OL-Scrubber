@@ -85,6 +85,8 @@
         .btn-primary:hover { background: #c73050; }
         .btn-secondary { background: #0f3460; }
         .btn-secondary:hover { background: #1a4a80; }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn:disabled:hover { background: #0f3460; }
 
         /* Screenshot area */
         .screenshot-container {
@@ -216,8 +218,8 @@
         <label for="searchFilter">Filter</label>
         <input type="text" id="searchFilter" placeholder="Filter" style="width: 120px;">
         <button class="btn btn-primary" id="searchBtn">Search</button>
+        <button class="btn btn-secondary" id="searchPrevBookBtn" disabled>Prev Book</button>
         <button class="btn btn-secondary" id="searchNextBookBtn">Next Book</button>
-        <button class="btn btn-secondary" id="searchLastBookBtn">Last Book</button>
         <button class="btn btn-secondary" id="searchAddBtn">+ Add Page</button>
         <button class="btn btn-secondary" id="searchDownloadBtn">Download Selected</button>
     </div>
@@ -241,6 +243,7 @@
     <div class="state-bar" id="stateBar" style="display: none;">
         <div><span class="label">Page </span><span class="value" id="statePage">-</span><span class="label"> / </span><span class="value" id="stateTotalPages">-</span></div>
         <div><span class="label">Book </span><span class="value" id="stateBook">-</span><span class="label"> / </span><span class="value" id="stateTotalBooks">-</span></div>
+        <div id="stateBookTitle" style="color: #e94560; font-size: 13px; font-weight: 600;"></div>
         <div id="stateSearchInfo" style="color: #888; font-size: 12px;"></div>
     </div>
 
@@ -277,6 +280,9 @@
             stateTotalPages.textContent = state.totalPages || '-';
             stateBook.textContent = state.currentBook || '-';
             stateTotalBooks.textContent = state.totalBooks || '-';
+
+            // Show book title if available
+            document.getElementById('stateBookTitle').textContent = state.bookTitle || '';
 
             // Show search info
             const parts = [];
@@ -378,9 +384,10 @@
             });
         });
 
-        // Next Book, Last Book, Add Page, Download
+        // Prev Book, Next Book, Add Page, Download
+        const prevBookBtn = document.getElementById('searchPrevBookBtn');
         document.getElementById('searchNextBookBtn').addEventListener('click', () => sendCommand({ nextBook: 'true' }));
-        document.getElementById('searchLastBookBtn').addEventListener('click', () => sendCommand({ lastBook: 'true' }));
+        prevBookBtn.addEventListener('click', () => sendCommand({ prevBook: 'true' }));
         document.getElementById('searchAddBtn').addEventListener('click', () => sendCommand({ incAmt: '0' }));
         document.getElementById('searchDownloadBtn').addEventListener('click', () => sendCommand({ DL: 'true' }));
 
@@ -402,16 +409,24 @@
             btn.addEventListener('click', () => sendNavCommand(btn.dataset.cmd));
         });
 
-        // ---- Update Next Book button label with current book count ----
+        // ---- Update book buttons with current book count and disable logic ----
         const nextBookBtn = document.getElementById('searchNextBookBtn');
         function updateBookLabel() {
             fetch('/api/status')
                 .then(res => res.json())
                 .then(data => {
                     if (data.state && data.state.currentBook && data.state.totalBooks) {
-                        nextBookBtn.textContent = `Next Book (${data.state.currentBook}/${data.state.totalBooks})`;
+                        const cur = data.state.currentBook;
+                        const total = data.state.totalBooks;
+                        nextBookBtn.textContent = `Next Book (${cur}/${total})`;
+                        prevBookBtn.textContent = `Prev Book (${cur}/${total})`;
+                        nextBookBtn.disabled = (cur >= total);
+                        prevBookBtn.disabled = (cur <= 1);
                     } else {
                         nextBookBtn.textContent = 'Next Book';
+                        prevBookBtn.textContent = 'Prev Book';
+                        nextBookBtn.disabled = true;
+                        prevBookBtn.disabled = true;
                     }
                 })
                 .catch(() => {});

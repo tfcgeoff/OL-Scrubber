@@ -35,8 +35,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Next book command from REST API
     onNextBookCommand: (callback) => ipcRenderer.on('next-book:execute', (_event, params) => callback(params)),
 
-    // Last book command from REST API
-    onLastBookCommand: (callback) => ipcRenderer.on('last-book:execute', (_event, params) => callback(params)),
+    // Prev book command from REST API
+    onPrevBookCommand: (callback) => ipcRenderer.on('prev-book:execute', (_event, params) => callback(params)),
 
     // Intercepted Onland page API URLs (from main process network filter)
     onPageApiUrl: (callback) => ipcRenderer.on('onland:pageApiUrl', (_event, data) => callback(data)),
