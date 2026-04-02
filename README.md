@@ -1,6 +1,6 @@
 # OL-Scrubber
 
-Electron app for automating Onland.ca web scraping with remote control via REST API. Browse land registry books, accumulate pages into PDFs, and control everything from a browser or script.
+Electron app for automating Onland.ca web scraping with a REST API for remote control. Browse land registry books, accumulate pages into PDFs, and drive everything from a browser, script, or the built-in secondary display.
 
 ## Features
 
@@ -10,34 +10,43 @@ Electron app for automating Onland.ca web scraping with remote control via REST 
 - PDF page accumulation (save individual pages, auto-combine into single PDF)
 - Search automation for LRO/Plan/Concession/Section/Condo/Parcel
 - Screenshot capture of book pages via CDP/fetch interception
+- Smart page estimation from book description (range/list parsing)
+- Book title and description scraped from Onland DOM
+- Stateless API — state cleared on every new search
 - Business hours enforcement for Onland API
 
 ## Installation
 
 ```bash
-npm install && npm start
+npm install && npm start        # Production mode (no API, no logging)
+npm run dev                      # Debug mode (API server on :3001, file logging)
 ```
 
 ## Configuration
 
 | CLI Argument | Description |
 |---|---|
-| `--port=XXXX` | Set REST API port (default: `3001`) |
-| `--dev` | Enable dev mode (`npm run dev`) |
+| `--dev` | Enable REST API server on port 3001 and file logging (`npm run dev`) |
+| `--port=XXXX` | Set REST API port (default: `3001`, requires `--dev`) |
+| `--inspect` | Enable CDP debugger for attaching DevTools externally |
 
 ---
 
-## REST API
+## REST API Server (requires `--dev`)
+
+The REST API server handles all commands (search, navigation, PDF) and returns screenshots and state. 
 
 | | |
 |---|---|
 | **Default port** | `3001` |
-| **Remote control UI** | `http://localhost:3001` |
+| **Secondary display UI** | `http://localhost:3001` (browser-based testing frontend) |
 | **Health check** | `GET /api/status` |
 | **Commands (GET)** | `GET /api?param=value&...` |
 | **Commands (POST)** | `POST /api` with JSON body |
 
 Both `GET /api` and `POST /api` accept the same parameters and return the same response format. GET uses URL query parameters; POST uses a JSON body.
+
+There is a secondary website available at localhost:3001 for testing also when starting service with a --dev switch.
 
 ---
 
@@ -45,12 +54,28 @@ Both `GET /api` and `POST /api` accept the same parameters and return the same r
 
 All parameters are optional, but at least one action parameter must be provided.
 
+```json
+{
+    "lro": "55",
+    "descType": "Plan",
+    "descNumber": "608",
+    "descType2": "Lot",
+    "descNumber2": "5",
+    "filter": "Georgian",
+    "incAmt": "+5",
+    "DL": true,
+    "confirm": true,
+    "nextBook": true,
+    "prevBook": true
+}
+```
+
 | Parameter | Type | Action |
 |---|---|---|
 | `lro` | string | LRO number (triggers a search) |
 | `descType` | string | Description type: `Concession`, `Plan`, `Section`, `Condo`, `Parcel` |
 | `descNumber` | string | Description number (triggers a search with `lro` + `descType`) |
-| `descType2` | string | Optional secondary search type (e.g., `Lot`, `Parklot`) |
+| `descType2` | string | Optional secondary search type: `Lot`, `Parklot`, `Gore`, `Gorelot`, `Broken front` |
 | `descNumber2` | string | Optional secondary search number |
 | `filter` | string | Optional township filter |
 | `incAmt` | string | Navigation command (see below) |
@@ -86,12 +111,13 @@ All commands return JSON with this structure:
     "state": {
         "lro": "55",
         "descType": "Plan",
-        "descNumber": "606",
-        "currentPage": 12,
-        "totalPages": 200,
-        "currentBook": 3,
-        "totalBooks": 8,
-        "bookTitle": "PARCEL 952 TO 1029",
+        "descNumber": "608",
+        "currentPage": 68,
+        "totalPages": 262,
+        "currentBook": 1,
+        "totalBooks": 2,
+        "bookTitle": "THUNDER BAY (55), MCINTYRE, Book 7",
+        "bookField": "PLAN 606, 608, 624, 625",
         "filter": ""
     }
 }
@@ -105,7 +131,8 @@ All commands return JSON with this structure:
 | `state.totalPages` | number | Total pages in current book |
 | `state.currentBook` | number | Current book number in search results |
 | `state.totalBooks` | number | Total books found in search |
-| `state.bookTitle` | string/null | Scraped book title (e.g., "PARCEL 952 TO 1029") |
+| `state.bookTitle` | string/null | Scraped book header (e.g., "THUNDER BAY (55), MCINTYRE, Book 7") |
+| `state.bookField` | string/null | Scraped book description (e.g., "PLAN 606, 608, 624, 625") |
 | `timeout` | boolean | `true` if the 30-second capture timeout was reached |
 
 ### PDF Download Response
