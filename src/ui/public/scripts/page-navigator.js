@@ -6,7 +6,100 @@ import { addLog } from './logger.js';
 import { PAGE_COUNT_MAX_POLLS, PAGE_COUNT_POLL_INTERVAL } from './variables.js';
 import { setState, getState } from './variables.js';
 import { executeNavCommand } from './navigation-handler.js';
-import { parseBookTitleRange, estimateStartPage } from './search-handler.js';
+
+/**
+ * Parse description field to extract numbers for page estimation
+ * Handles range formats ("PARCEL 884 TO 1082"), list formats ("PLAN 606, 608, 624, 625"),
+ * and semicolon-separated segments ("CONCESSION 1; LOT 6 TO 10")
+ */
+function parseDescNumbers(descField, descType, descNumber) {
+    try {
+        const target = parseInt(descNumber, 10);
+        if (!descField || isNaN(target)) return { type: 'none' };
+
+        const typeLabel = (descType || '').toUpperCase();
+        const segments = descField.split(';').map(s => s.trim()).filter(Boolean);
+
+        // Find the segment matching the descType
+        let relevantSegment = '';
+        for (const seg of segments) {
+            const segWords = seg.split(/[\s,]+/);
+            const firstWord = segWords.length >= 1 ? segWords[0].toUpperCase() : '';
+            if (segWords.length >= 2 && firstWord === typeLabel) {
+                relevantSegment = seg;
+                break;
+            }
+        }
+
+        const text = relevantSegment || descField;
+
+        // Check for range pattern (e.g., "LOT 1 TO 83")
+        const rangeMatch = text.match(/(\d+)\s+(TO|to|–|-)\s+(\d+)/);
+        if (rangeMatch) {
+            return { type: 'range', start: parseInt(rangeMatch[1], 10), end: parseInt(rangeMatch[3], 10), target };
+        }
+
+        // Extract all numbers as a list
+        const numbers = text.match(/\d+/g);
+        if (numbers && numbers.length >= 1) {
+            const nums = numbers.map(Number);
+            const idx = nums.indexOf(target);
+            if (idx !== -1) {
+                return { type: 'list', numbers: nums, targetIndex: idx, total: nums.length, target };
+            }
+        }
+
+        return { type: 'none' };
+    } catch (err) {
+        return { type: 'none' };
+    }
+}
+
+/**
+ * Estimate starting page from parsed description numbers.
+ * Page 1 is always the title page, so minimum result is 2.
+ */
+function estimatePageFromDesc(parsed, totalPages) {
+    try {
+        let result;
+        if (parsed.type === 'range') {
+            if (parsed.start >= parsed.end || totalPages < 1 || parsed.target < parsed.start || parsed.target > parsed.end) {
+                result = Math.max(2, Math.floor(totalPages / 2));
+            } else {
+                const offset = parsed.target - parsed.start;
+                const numItems = parsed.end - parsed.start + 1;
+                result = Math.max(2, Math.min(totalPages, Math.round(offset * totalPages / numItems) + 2));
+            }
+        } else if (parsed.type === 'list') {
+            if (parsed.total < 1 || totalPages < 1) {
+                result = Math.max(2, Math.floor(totalPages / 2));
+            } else {
+                result = Math.max(2, Math.min(totalPages, Math.round(parsed.targetIndex * totalPages / parsed.total) + 2));
+            }
+        } else {
+            result = Math.max(2, Math.floor(totalPages / 2));
+        }
+        return result;
+    } catch (err) {
+        return Math.max(2, Math.floor(totalPages / 2));
+    }
+}
+
+/**
+ * Calculate the best starting page from description field and book info.
+ */
+function calculateStartPage() {
+    try {
+        const descNumber = getState('descNumber');
+        const descType = getState('descType');
+        const descField = getState('bookField');
+        const totalPages = getState('totalPages');
+        const parsed = parseDescNumbers(descField || '', descType, descNumber);
+        return estimatePageFromDesc(parsed, totalPages || 1);
+    } catch (err) {
+        return Math.max(2, Math.floor((getState('totalPages') || 1) / 2));
+    }
+}
 
 /**
  * DEBUG: Test fetching a page directly from the Onland API
@@ -136,35 +229,13 @@ export function pollForPageCount(webview, onScreenshotReady) {
                 // DEBUG: Probe for page API (temporary)
                 probePDFjs(webview);
 
-                // Scrape the book title from the page
-                scrapeBookTitle(webview);
-
-                // Calculate best starting page using book range if available,
-                // otherwise fall back to 50%
-                const rangeStart = getState('bookRangeStart');
-                const rangeEnd = getState('bookRangeEnd');
-                const descNumber = parseInt(getState('descNumber'), 10);
-                const totalPages = pageResult.totalPages;
-
-                let startPage;
-                if (rangeStart && rangeEnd && !isNaN(descNumber)) {
-                    startPage = estimateStartPage(descNumber, rangeStart, rangeEnd, totalPages);
-                    addLog('info', 'Smart page estimation applied', {
-                        target: descNumber,
-                        range: `${rangeStart}-${rangeEnd}`,
-                        estimatedPage: startPage,
-                        totalPages
-                    });
-                } else {
-                    startPage = Math.max(1, Math.floor(totalPages / 2));
-                    addLog('info', 'No book range available, using 50% fallback', {
-                        startPage,
-                        totalPages
-                    });
-                }
-
-                // Navigate to estimated starting page
-                executeNavCommand(String(startPage));
+                // Scrape the book title, then calculate page
+                scrapeBookTitle(webview).then(() => {
+                    const startPage = calculateStartPage();
+                    const totalPages = pageResult.totalPages;
+                    addLog('info', 'Navigating to page', { startPage, totalPages });
+                    executeNavCommand(String(startPage));
+                });
             } else if (pollCount < maxPolls) {
                 return new Promise(resolve => {
                     setTimeout(() => resolve(poll(pollCount + 1)), PAGE_COUNT_POLL_INTERVAL);
