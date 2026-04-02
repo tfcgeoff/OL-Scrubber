@@ -210,6 +210,8 @@ function handleApiCommand(params, res, req) {
     // Forward search command — also delete any existing accumulated PDF
     // (new search means we're starting fresh, discard old accumulation)
     if (lro && descType && descNumber) {
+        // Clear stale state before a new search (stateless API)
+        currentState = {};
         // Delete any previously accumulated PDF (new search session)
         if (pdfAccumulator) {
             try {

@@ -497,15 +497,11 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-    // Service mode: don't quit — keep running in background
-    // App only quits via explicit process termination or taskkill
-    // Stop REST API server
     try {
         const server = require('./server.js');
         server.stopServer();
-    } catch (e) {
-        // Server module may not have loaded
-    }
+    } catch (e) {}
+    app.quit();
 });
 
 app.on('activate', () => {
