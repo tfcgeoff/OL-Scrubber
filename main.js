@@ -271,14 +271,8 @@ function createWindow() {
         mainWindow = null;
     });
 
-    // In service mode, prevent window close from destroying it — hide instead
     mainWindow.on('close', (event) => {
-        if (!showWindow) {
-            // Service mode: hide window, keep app alive
-            event.preventDefault();
-            mainWindow.hide();
-            log('Window closed — app continues running as background service');
-        }
+        saveBounds();
     });
 
     mainWindow.on('resize', saveBounds);
