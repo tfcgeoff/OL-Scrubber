@@ -336,25 +336,23 @@ function createWindow() {
 
                                 // Extract the actual page image data from the response
                                 // Onland API returns JSON: {"content":"<base64_pdf>"} or {"image":"<base64_pdf>"}
-                                // In rare cases it may return raw binary PDF
-                                if (headerCT.includes('json') || headerCT.includes('text')) {
-                                    // Response is JSON — extract the embedded base64 content
-                                    try {
-                                        const json = JSON.parse(rawBody);
-                                        base64Data = json.content || json.image || Buffer.from(rawBody).toString('base64');
-                                        log('FETCH CDP: JSON response, extracted content field');
-                                    } catch (e) {
-                                        // Not valid JSON despite content-type — base64 encode as-is
-                                        base64Data = Buffer.from(rawBody).toString('base64');
-                                        log('FETCH CDP: Text response, not JSON, encoded as base64');
+                                // Content-type is unreliable — always try JSON first
+                                try {
+                                    const json = JSON.parse(rawBody);
+                                    if (json.content || json.image) {
+                                        base64Data = json.content || json.image;
+                                        log('FETCH CDP: JSON response, extracted content field (contentType: ' + headerCT + ')');
+                                    } else {
+                                        throw new Error('No content/image field');
                                     }
-                                } else {
-                                    // Binary response — body is already the raw data (or base64 of raw data)
+                                } catch (e) {
+                                    // Not JSON or no content field — treat as raw binary
                                     if (result.base64Encoded) {
                                         base64Data = result.body; // already base64
                                     } else {
                                         base64Data = Buffer.from(rawBody).toString('base64');
                                     }
+                                    log('FETCH CDP: Binary response (contentType: ' + headerCT + ')');
                                 }
 
                                 if (base64Data) {
@@ -400,6 +398,9 @@ function createWindow() {
 
     return mainWindow;
 }
+
+// Enable main process debugging (open chrome://inspect to see main.js scripts)
+app.commandLine.appendSwitch('inspect');
 
 // App lifecycle events
 app.whenReady().then(() => {

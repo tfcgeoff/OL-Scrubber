@@ -25,6 +25,15 @@ const app = express();
 let server = null;
 let mainWindow = null;
 
+// API debug log — all request/response traffic both ways
+const API_LOG_PATH = path.join(__dirname, 'shared', 'api-debug.log');
+
+function apiLog(direction, data) {
+    const ts = new Date().toISOString();
+    const entry = `[${ts}] ${direction} ${typeof data === 'string' ? data : JSON.stringify(data)}\n`;
+    fs.appendFileSync(API_LOG_PATH, entry);
+}
+
 // PDF Accumulator — runs in main process, accessed via require (shared module cache)
 let pdfAccumulator = null;
 try {
@@ -65,10 +74,13 @@ app.use(express.json());
 
 // Status endpoint — lets secondary display verify connection on load
 app.get('/api/status', (req, res) => {
-    res.json({
+    apiLog('GET /api/status', { query: req.query });
+    const response = {
         connected: !!(mainWindow && !mainWindow.isDestroyed()),
         state: getPublicState()
-    });
+    };
+    apiLog('RESPONSE /api/status', response);
+    res.json(response);
 });
 
 // Serve secondary display HTML
@@ -86,7 +98,25 @@ app.get('/', (req, res) => {
  * @param {Object} params - Command parameters (lro, descType, descNumber, incAmt, DL, confirm, nextBook, prevBook, etc.)
  * @param {Object} res - Express response object
  */
-function handleApiCommand(params, res) {
+function handleApiCommand(params, res, req) {
+    apiLog('REQUEST /api', { method: req.method, params });
+
+    // Wrap res.json to log all responses
+    const originalJson = res.json.bind(res);
+    res.json = function(data) {
+        // Log screenshot summary (don't dump huge base64 strings)
+        const logData = { ...data };
+        if (logData.screenshot) {
+            const prefix = logData.screenshot.substring(0, 40);
+            logData.screenshot = `${prefix}... (${logData.screenshot.length} chars)`;
+        }
+        if (logData.pdf && logData.pdf.base64Data) {
+            logData.pdf = { ...logData.pdf, base64Data: `(${logData.pdf.base64Data.length} chars)` };
+        }
+        apiLog('RESPONSE /api', logData);
+        originalJson(data);
+    };
+
     const { lro, descType, descNumber, descType2, descNumber2, filter, incAmt, DL, confirm, nextBook, prevBook } = params;
 
     // Must have some action
@@ -228,7 +258,7 @@ function handleApiCommand(params, res) {
 
 // GET /api - command via query parameters
 app.get('/api', (req, res) => {
-    handleApiCommand(req.query, res);
+    handleApiCommand(req.query, res, req);
 });
 
 // POST /api - command via JSON body
@@ -237,7 +267,7 @@ app.post('/api', (req, res) => {
         res.status(400).json({ error: 'Request body must be JSON object' });
         return;
     }
-    handleApiCommand(req.body, res);
+    handleApiCommand(req.body, res, req);
 });
 
 /**
