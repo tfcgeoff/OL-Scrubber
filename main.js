@@ -170,16 +170,12 @@ function configureGpu() {
 
 configureGpu();
 
-// Check for --dev flag before anything else
-const isDev = process.argv.includes('--dev');
-
 // Parse --port= CLI arg for REST API server
 const portArg = process.argv.find(arg => arg.startsWith('--port='));
 const restPort = portArg ? parseInt(portArg.split('=')[1], 10) : 3001;
 
-// --debug-server / --useTest flags enable secondary display + REST API server (listens on port)
-// When absent, no port is occupied — for production use
-const isDebug = process.argv.includes('--debug-server') || process.argv.includes('--useTest');
+// --dev enables secondary display, REST API server, DevTools, and file logging
+const isDev = process.argv.includes('--dev');
 
 let mainWindow = null;
 const boundsPath = path.join(app.getPath('userData'), 'window-bounds.json');
@@ -263,9 +259,8 @@ function createWindow() {
 
     mainWindow.loadFile(path.join(__dirname, 'src', 'ui', 'public', 'index.html'));
 
-    if (isDev) {
-        mainWindow.webContents.openDevTools();
-    }
+    // DevTools not opened in service mode (window is 0x0, DevTools would create a visible window)
+    // Use --inspect flag instead to attach DevTools via CDP when needed
 
     mainWindow.on('closed', () => {
         mainWindow = null;
@@ -477,7 +472,7 @@ app.whenReady().then(() => {
     });
 
     // Start REST API server for secondary display (only in --debug mode)
-    if (isDebug) {
+    if (isDev) {
         try {
             const server = require('./server.js');
             server.startServer(restPort, mainWindow);

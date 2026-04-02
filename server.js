@@ -29,6 +29,7 @@ let mainWindow = null;
 const API_LOG_PATH = path.join(__dirname, 'shared', 'api-debug.log');
 
 function apiLog(direction, data) {
+    if (!process.argv.includes('--dev')) return;
     const ts = new Date().toISOString();
     const entry = `[${ts}] ${direction} ${typeof data === 'string' ? data : JSON.stringify(data)}\n`;
     fs.appendFileSync(API_LOG_PATH, entry);
